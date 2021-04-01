@@ -20,10 +20,33 @@ function sync_album {
   done
 }
 
+function sync_range {
+  name="$1"
+  range="$2"
+  fromDate="${range%%-*}"
+  toDate="${range##*-}"
+  range=$(find "$public/" -type f \
+    | cut -d "-" -f 1 \
+    | sed 's|.*/||' \
+    | sort -u \
+    | sed '0,/'"$fromDate"'/d' \
+    | sort -r \
+    | sed '0,/'"$toDate"'/d' \
+    | sort \
+    | tr '\n\r' ' '
+  )
+  echo "Syncing $name across $fromDate $range $toDate"
+  sync_album "$name" "$fromDate"
+  for f in $range
+  do sync_album "$name" "$f"
+  done
+  sync_album "$name" "$toDate"
+}
+
 while read -r album;
 do
   name="${album%%:*}"
-  data="${album##*: }"
+  value="${album##*: }"
   album="$albums/$name"
 
   if [[ ! -d "$album" ]]
@@ -31,32 +54,14 @@ do
   else rm -rf "${album:?}/"*
   fi
 
-  if [[ "$data" == *" "* ]]
-  then echo "idk what to do w complicated data" && continue
-  elif [[ "$data" == *"-"* ]]
+  if [[ "$value" == *" "* ]]
   then
-
-    fromDate="${data%%-*}"
-    toDate="${data##*-}"
-    range=$(find "$public/" -type f \
-      | cut -d "-" -f 1 \
-      | sed 's|.*/||' \
-      | sort -u \
-      | sed '0,/'"$fromDate"'/d' \
-      | sort -r \
-      | sed '0,/'"$toDate"'/d' \
-      | sort \
-      | tr '\n\r' ' '
-    )
-
-    echo "Syncing $name across $fromDate $range $toDate"
-
-    for f in $range
-    do sync_album "$name" "$f"
+    for range in $value
+    do sync_range "$name" "$range"
     done
-    sync_album "$name" "$toDate"
-
-  else sync_album "$name" "$data"
+  elif [[ "$value" == *"-"* ]]
+  then sync_range "$name" "$value"
+  else sync_album "$name" "$value"
   fi
 
 done < <(cat "$root/albums.conf")
