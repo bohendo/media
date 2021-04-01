@@ -15,7 +15,7 @@ if ! [[ "$target" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.[0-9a-z]{2,5}$ ]]
 then echo "$fail Invalid target provided: $target" && exit 1
 fi
 
-path="$media/$target"
+path="$media/public/$target"
 if ! [[ -f "$path" ]]
 then echo "$fail Can't find a target at $path" && exit 1
 fi
@@ -26,5 +26,6 @@ if ! grep -qs "$full_digest" < "$trash"
 then echo "$full_digest" >> "$trash"
 fi
 
-rm -rf "$path"
+rm -f "$path"
+find "$media/albums" -name "$target" -exec rm -f {} \;
 echo "$good Removed $path"

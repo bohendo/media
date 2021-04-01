@@ -51,7 +51,6 @@ do
 
   if [[ ! -d "$album" ]]
   then mkdir -p "$album"
-  else rm -rf "${album:?}/"*
   fi
 
   if [[ "$value" == *" "* ]]
