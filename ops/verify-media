@@ -2,6 +2,7 @@
 
 year_prefix="20"
 fail="❌"
+good="✅"
 
 if [[ -z "$(command -v exiftool)" ]]
 then echo "$fail Install exiftool first" && exit 1
@@ -24,8 +25,10 @@ then echo "$fail $target does not have a create date" && exit 1
 fi
 
 if [[ "$createdate" != "$expected"* ]]
-then echo "$target $createdate"
-#else echo "$good $target has a valid create date of $createdate"
+then
+  echo "$fail $target $createdate"
+else
+  echo "$good $target $createdate"
 fi
 
 exit
