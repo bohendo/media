@@ -63,7 +63,7 @@ full_digest=$(sha256sum "$target" | cut -d " " -f 1)
 digest=$(echo "$full_digest" | head -c 8)
 
 name="$created-$digest.$ext"
-path="$media/$name"
+path="$media/public/$name"
 trash=$media/.trash
 
 if grep -qs "$full_digest" < "$trash"

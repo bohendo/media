@@ -1,11 +1,62 @@
 #!/bin/bash
 
 root=$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." >/dev/null 2>&1 && pwd )
+media="${MEDIA_DIR:-$HOME/Media}"
+albums="$media/albums"
+public="$media/public"
 
-echo "Syncing albums"
+echo "Syncing albums at $albums"
 
-if [[ ! -d "albums" ]]
-then mkdir -p "albums"
+if [[ ! -d "$albums" ]]
+then mkdir -p "$albums"
 fi
 
-jq '.albums' "$root/config.json"
+function sync_album {
+  name="$1"
+  date="$2"
+  echo "Syncing album $name with contents from $date"
+  for f in "$public/$date"*
+  do ln -fTs "$f" "$album/$(basename "$f")"
+  done
+}
+
+while read -r album;
+do
+  name="${album%%:*}"
+  data="${album##*: }"
+  album="$albums/$name"
+
+  if [[ ! -d "$album" ]]
+  then mkdir -p "$album"
+  else rm -rf "${album:?}/"*
+  fi
+
+  if [[ "$data" == *" "* ]]
+  then echo "idk what to do w complicated data" && continue
+  elif [[ "$data" == *"-"* ]]
+  then
+
+    fromDate="${data%%-*}"
+    toDate="${data##*-}"
+    range=$(find "$public/" -type f \
+      | cut -d "-" -f 1 \
+      | sed 's|.*/||' \
+      | sort -u \
+      | sed '0,/'"$fromDate"'/d' \
+      | sort -r \
+      | sed '0,/'"$toDate"'/d' \
+      | sort \
+      | tr '\n\r' ' '
+    )
+
+    echo "Syncing $name across $fromDate $range $toDate"
+
+    for f in $range
+    do sync_album "$name" "$f"
+    done
+    sync_album "$name" "$toDate"
+
+  else sync_album "$name" "$data"
+  fi
+
+done < <(cat "$root/albums.conf")

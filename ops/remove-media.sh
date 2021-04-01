@@ -10,7 +10,7 @@ if [[ ! -f "$trash" ]]
 then touch "$trash"
 fi
 
-target="$1"
+target=$(basename "$1")
 if ! [[ "$target" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.[0-9a-z]{2,5}$ ]]
 then echo "$fail Invalid target provided: $target" && exit 1
 fi
