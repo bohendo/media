@@ -1,0 +1,40 @@
+#!/bin/bash
+
+year_prefix="20"
+fail="❌"
+
+if [[ -z "$(command -v exiftool)" ]]
+then echo "$fail Install exiftool first" && exit 1
+fi
+
+target="$1"
+if [[ ! -f "$target" ]]
+then echo "$fail File does not exist at $target" && exit 1
+fi
+
+expected="$2"
+if [[ -z "$expected" ]]
+then echo "No expected date prefix provided"
+fi
+
+createdate=$(exiftool -CreateDate "$target" 2> /dev/null | sed 's/.*  ://' | sed 's/: /:0/g' | sed 's/://g' | sed 's/ /-/g' | sed 's/-$//' | sed 's/^-//' | sed 's/^'"$year_prefix"'//')
+
+if [[ -z "$createdate" ]]
+then echo "$fail $target does not have a create date" && exit 1
+fi
+
+if [[ "$createdate" != "$expected"* ]]
+then echo "$target $createdate"
+#else echo "$good $target has a valid create date of $createdate"
+fi
+
+exit
+
+for key in serialnumber software firmwareversion
+do
+  val=$(exiftool "-$key" "$target" 2> /dev/null)
+  if [[ -n "$val" ]]
+  then echo "$val"
+  fi
+done
+echo
