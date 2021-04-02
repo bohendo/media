@@ -63,8 +63,16 @@ full_digest=$(sha256sum "$target" | cut -d " " -f 1)
 digest=$(echo "$full_digest" | head -c 8)
 
 name="$created-$digest.$ext"
+
 path="$media/public/$name"
+if [[ ! -d "$(dirname "$path")" ]]
+then mkdir "$(dirname "$path")"
+fi
+
 trash=$media/.trash
+if [[ ! -f "$trash" ]]
+then touch "$trash"
+fi
 
 if grep -qs "$full_digest" < "$trash"
 then echo "$warn $name has already been deleted, skipping import" && exit 0
