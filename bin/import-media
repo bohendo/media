@@ -1,6 +1,8 @@
 #!/bin/bash
 
 media=${MEDIA_DIR:-$HOME/Media} 
+tmp="/tmp/media"
+mkdir -p "$tmp"
 
 fail="❌"
 good="✅"
@@ -8,6 +10,10 @@ warn="⚠️ "
 
 if [[ -z "$(command -v exiftool)" ]]
 then echo "$fail Install exiftool first" && exit 1
+fi
+
+if [[ -z "$(command -v ffmpeg)" ]]
+then echo "$fail Install ffmpeg first" && exit 1
 fi
 
 if [[ ! -d "$media" ]]
@@ -19,16 +25,19 @@ if [[ ! -f "$target" ]]
 then echo "$fail File does not exist at $target" && exit 1
 fi
 
-ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
-if [[ \
-  "$ext" != "avi" &&\
-  "$ext" != "gif" &&\
-  "$ext" != "jpg" &&\
-  "$ext" != "mov" &&\
-  "$ext" != "mp4" &&\
-  "$ext" != "png" \
-  ]]
-then echo "$fail Unknown FileTypeExtension $ext for $target" && exit 1
+dryrun="$2"
+if [[ -z "$dryrun" ]]
+then
+  echo "Use the 2nd arg to specify whether or not you actually want to make changes"
+  echo "  -n  No I don't want to make changes, show me what the changes would be"
+  echo "  -y  Yes I want to make changes"
+  echo "  -p  Yes I want to make changes but keep things private"
+  exit 1;
+fi
+
+if [[ "$3" == "-p" || "$3" == "--private" ]]
+then privacy="private"
+else privacy="public"
 fi
 
 function getCreateDate {
@@ -41,22 +50,78 @@ function getCreateDate {
     | sed 's/^-//'
 }
 
+function setCreateDate {
+  t="$1"
+  d="$2"
+  exiftool -CreateDate="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}" "$t" > /dev/null
+  created=$(getCreateDate "$t")
+  original="${t}_original"
+  if [[ "${t}_original" != "$tmp/$(basename "${t}_original")" ]]
+  then mv -f "${t}_original" "$original"
+  fi
+  echo "$good Updated exif data for $t w new create date: ${created}"
+}
+
 created=$(getCreateDate "$target")
 if [[ -z "$created" ]]
 then
-  echo "$warn No available CreateDate exif data for $target"
 
   if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
   then
-    date="$(echo "$target" | cut -d "-" -f 2)-000000"
-    exiftool -CreateDate="${date::4}:${date:4:2}:${date:6:2} 00:00:00" "$target"
+    setCreateDate "$target" "$(echo "$target" | cut -d "-" -f 2)-000000"
     created=$(getCreateDate "$target")
-    echo "Updated exif data w new create date: ${created}"
+
+  # eg 2019-10-26 10.36.10.jpg
+  elif [[ "$target" =~ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}\.[[:digit:]]{2}\.[[:digit:]]{2}.* ]]
+  then
+    setCreateDate "$target" "$(basename "$target" | sed 's/-//g' | sed 's/ /-/g' | sed 's/\.//' | sed 's/\.//' | sed 's/\..*//')"
+    created=$(getCreateDate "$target")
+
+  # eg SmartSelect_20200613-210904_Prime Video.jpg
+  elif [[ "$target" =~ _[[:digit:]]{8}-[[:digit:]]{6}_*.* ]]
+  then
+    setCreateDate "$target" "$(basename "$target" | cut -d "_" -f 2)"
+    created=$(getCreateDate "$target")
+
+  # eg Screenshot from 2020-08-26 14-03-02.png
+  elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}-[[:digit:]]{2}-[[:digit:]]{2}.* ]]
+  then
+    setCreateDate "$target" "$(basename "$target" | cut -d " " -f 3-4 | sed 's/\..*//' | sed 's/-//g' | sed 's/ /-/')"
+    created=$(getCreateDate "$target")
+
   else
+    setCreateDate "$target" "00000000-000000"
     created="00000000-000000" # TODO: check to see if the filename includes a date?
-    echo "Using unknown create date: ${created}"
   fi
 
+fi
+
+ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
+
+# Convert m4v files into mp4
+if [[ "$ext" == "m4v" ]]
+then
+  tmpTarget="$tmp/$(basename "$target" | sed 's/\.m4v/\.mp4/')"
+  if [[ -f "$tmpTarget" ]]
+  then rm -f "$tmpTarget"
+  fi
+  echo "$warn Converting m4v-formatted $target into an mp4 at $tmpTarget"
+  ffmpeg -i "$target" -loglevel error -vcodec copy -acodec copy "$tmpTarget"
+  setCreateDate "$tmpTarget" "$created"
+  target="$tmpTarget"
+  ext="mp4"
+fi
+
+if [[ \
+  "$ext" != "avi" &&\
+  "$ext" != "gif" &&\
+  "$ext" != "jpg" &&\
+  "$ext" != "mov" &&\
+  "$ext" != "mp4" &&\
+  "$ext" != "pdf" &&\
+  "$ext" != "png" \
+  ]]
+then echo "$fail Unknown FileTypeExtension $ext for $target" && exit 1
 fi
 
 full_digest=$(sha256sum "$target" | cut -d " " -f 1)
@@ -64,7 +129,7 @@ digest=$(echo "$full_digest" | head -c 8)
 
 name="$created-$digest.$ext"
 
-path="$media/public/$name"
+path="$media/$privacy/$name"
 if [[ ! -d "$(dirname "$path")" ]]
 then mkdir "$(dirname "$path")"
 fi
@@ -82,8 +147,8 @@ if [[ -f "$path" ]]
 then
   dup_digest=$(sha256sum "$path" | cut -d " " -f 1)
   if [[ "$dup_digest" == "$full_digest" ]]
-  then echo "$good Destination $name already exists w the same digest as $target"
-  else echo "$fail Destination $name already exists w DIFFERENT digest than $target"
+  then echo "$good Destination $path already exists w the same digest as $target"
+  else echo "$fail Destination $path already exists w DIFFERENT digest than $target"
   fi
   exit 0
 fi
@@ -105,9 +170,9 @@ then
   exit 1
 fi
 
-if [[ "$2" == "-n" ]]
-then echo "$good Copying $target to $path"
-elif [[ "$2" == "-y" ]]
+if [[ "$dryrun" == "-n" ]]
+then echo "$good Copy $target to $path"
+elif [[ "$dryrun" == "-y" ]]
 then
   cp -i "$target" "$path"
   echo "$good Copied $target to $path"
@@ -117,4 +182,5 @@ else
   echo "Use the 2nd arg to specify whether or not you actually want to make changes"
   echo "  -n  No I don't want to make changes, show me what the changes would be"
   echo "  -y  Yes I want to make changes"
+  echo "  -p  Yes I want to make changes but keep things private"
 fi
