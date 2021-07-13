@@ -26,8 +26,8 @@ if [[ ! -f "$target" ]]
 then echo "$fail File does not exist at $target" && exit 1
 fi
 
-dryrun="$2"
-if [[ -z "$dryrun" ]]
+for_real="$2"
+if [[ -z "$for_real" ]]
 then
   echo "Use the 2nd arg to specify whether or not you actually want to make changes"
   echo "  -n  No I don't want to make changes, show me what the changes would be"
@@ -36,9 +36,14 @@ then
   exit 1;
 fi
 
-if [[ "$3" == "-p" || "$3" == "--private" ]]
+if [[ "$3" == "--private" ]]
 then privacy="private"
-else privacy="public"
+else privacy="camera"
+fi
+
+if [[ "$4" == "--rm" || "$4" == "--remove" ]]
+then remove="true"
+else remove="false"
 fi
 
 function getCreateDate {
@@ -63,6 +68,23 @@ function setCreateDate {
   fi
   echo "$good Updated exif data for $t w new create date: ${created}"
 }
+
+dotype=${target##*.}
+ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
+
+if [[ \
+  "$ext" != "3gp" &&\
+  "$ext" != "avi" &&\
+  "$ext" != "gif" &&\
+  "$ext" != "heic" &&\
+  "$ext" != "jpg" &&\
+  "$ext" != "m4v" &&\
+  "$ext" != "mov" &&\
+  "$ext" != "mp4" &&\
+  "$ext" != "png" \
+  ]]
+then echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
+fi
 
 created=$(getCreateDate "$target")
 if [[ -z "$created" ]]
@@ -98,22 +120,6 @@ then
 
 fi
 
-dotype=${target##*.}
-ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
-
-if [[ \
-  "$ext" != "avi" &&\
-  "$ext" != "gif" &&\
-  "$ext" != "heic" &&\
-  "$ext" != "jpg" &&\
-  "$ext" != "m4v" &&\
-  "$ext" != "mov" &&\
-  "$ext" != "mp4" &&\
-  "$ext" != "png" \
-  ]]
-then echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
-fi
-
 ########################################
 ## Conversions: heic=>jpg, avi,m4v,mov=>mp4
 
@@ -128,49 +134,21 @@ then
   then rm -f "$tmpTarget"
   fi
   echo "$warn Converting heic-formatted $target into an jpg at $tmpTarget"
-  heif-convert "$target" "$tmpTarget" > /dev/null
+  heif-convert -q95 "$target" "$tmpTarget" > /dev/null
   target="$tmpTarget"
   ext="jpg"
 fi
 
-# Convert mov files into mp4
+# Convert video files into mp4
 # Do we need to rm data streams? https://github.com/aminyazdanpanah/PHP-FFmpeg-video-streaming/issues/74
-if [[ "$ext" == "mov" ]]
+if [[ "$ext" == "3gp" || "$ext" == "avi" || "$ext" == "m4a" || "$ext" == "mov" ]]
 then
   tmpTarget="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
   if [[ -f "$tmpTarget" ]]
   then rm -f "$tmpTarget"
   fi
-  echo "$warn Converting mov-formatted $target into an mp4 at $tmpTarget"
-  ffmpeg -i "$target" -loglevel error -f mp4 "$tmpTarget"
-  setCreateDate "$tmpTarget" "$created"
-  target="$tmpTarget"
-  ext="mp4"
-fi
-
-# Convert m4v files into mp4
-if [[ "$ext" == "m4v" ]]
-then
-  tmpTarget="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
-  if [[ -f "$tmpTarget" ]]
-  then rm -f "$tmpTarget"
-  fi
-  echo "$warn Converting m4v-formatted $target into an mp4 at $tmpTarget"
-  ffmpeg -i "$target" -loglevel error -f mp4 -vcodec copy -acodec copy "$tmpTarget"
-  setCreateDate "$tmpTarget" "$created"
-  target="$tmpTarget"
-  ext="mp4"
-fi
-
-# Convert avi files into mp4
-if [[ "$ext" == "avi" ]]
-then
-  tmpTarget="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
-  if [[ -f "$tmpTarget" ]]
-  then rm -f "$tmpTarget"
-  fi
-  echo "$warn Converting avi-formatted $target into an mp4 at $tmpTarget"
-  ffmpeg -i "$target" -loglevel error -f mp4 "$tmpTarget"
+  echo "$warn Converting $ext-formatted $target into an mp4 at $tmpTarget"
+  ffmpeg -i "$target" -loglevel error -crf 18 -f mp4 "$tmpTarget"
   setCreateDate "$tmpTarget" "$created"
   target="$tmpTarget"
   ext="mp4"
@@ -203,9 +181,18 @@ then
   dup_digest=$(sha256sum "$path" | cut -d " " -f 1)
   if [[ "$dup_digest" == "$full_digest" ]]
   then echo "$good Destination $path already exists w the same digest as $target"
-  else echo "$fail Destination $path already exists w DIFFERENT digest than $target"
+  else echo "$fail Destination $path already exists w DIFFERENT digest than $target" && exit 1
   fi
-  exit 0
+
+  if [[ "$for_real" == "-y" && "$remove" == "true" ]]
+  then
+    if [[ "$(sha256sum "$target" | cut -d " " -f 1)" == "$(sha256sum "$path" | cut -d " " -f 1)" ]]
+    then rm -f "$target" && echo "$warn Removed $target"
+    else echo "Copy failure, not removing target" && exit 1
+    fi
+  fi
+
+  exit
 fi
 
 # Check for other files in media w the same digest
@@ -225,13 +212,21 @@ then
   exit 1
 fi
 
-if [[ "$dryrun" == "-n" ]]
+if [[ "$for_real" == "-n" ]]
 then echo "$good Copy $target to $path"
-elif [[ "$dryrun" == "-y" ]]
+elif [[ "$for_real" == "-y" ]]
 then
   cp -i "$target" "$path"
   echo "$good Copied $target to $path"
   chmod 644 "$path"
+
+  if [[ "$remove" == "true" ]]
+  then
+    if [[ "$(sha256sum "$target" | cut -d " " -f 1)" == "$(sha256sum "$path" | cut -d " " -f 1)" ]]
+    then rm -f "$target" && echo "$warn Removed $target"
+    else echo "Copy failure, not removing target" && exit 1
+    fi
+  fi
 
 else
   echo "Use the 2nd arg to specify whether or not you actually want to make changes"

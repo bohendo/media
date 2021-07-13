@@ -15,7 +15,7 @@ if ! [[ "$target" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.[0-9a-z]{2,5}$ ]]
 then echo "$fail Invalid target provided: $target" && exit 1
 fi
 
-path="$media/public/$target"
+path="$media/camera/$target"
 if ! [[ -f "$path" ]]
 then echo "$fail Can't find a target at $path" && exit 1
 fi

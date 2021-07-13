@@ -3,7 +3,7 @@
 root=$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." >/dev/null 2>&1 && pwd )
 media="${MEDIA_DIR:-$HOME/Media}"
 albums="$media/albums"
-public="$media/public"
+camera="$media/camera"
 
 echo "Syncing albums at $albums"
 
@@ -15,7 +15,7 @@ function sync_album {
   name="$1"
   date="$2"
   echo "Syncing album $name with contents from $date"
-  for f in "$public/$date"*
+  for f in "$camera/$date"*
   do ln -fTs "$f" "$album/$(basename "$f")"
   done
 }
@@ -25,7 +25,7 @@ function sync_range {
   range="$2"
   fromDate="${range%%-*}"
   toDate="${range##*-}"
-  range=$(find "$public/" -type f \
+  range=$(find "$camera/" -type f \
     | cut -d "-" -f 1 \
     | sed 's|.*/||' \
     | sort -u \
