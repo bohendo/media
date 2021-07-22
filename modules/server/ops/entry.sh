@@ -18,13 +18,13 @@ then
 else
   echo "Starting valuemachine server in dev-mode"
   exec ./node_modules/.bin/nodemon \
-    --delay=1 \
+    --delay 1 \
     --exitcrash \
-    --ignore=./*.test.ts \
-    --ignore=./*.swp \
+    --ignore ./*.test.ts \
+    --ignore ./*.swp \
     --legacy-watch \
-    --polling-interval=1000 \
-    --watch=src \
-    --exec="node -r ts-node/register" \
+    --polling-interval 1000 \
+    --watch src \
+    --exec "node -r ts-node/register" \
     ./src/entry.ts
 fi
