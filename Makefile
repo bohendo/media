@@ -5,11 +5,21 @@ SHELL=/bin/bash
 dir=$(shell cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )
 project=$(shell cat $(dir)/package.json | jq .name | tr -d '"')
 find_options=-type f -not -path "*/node_modules/*" -not -name "*.swp" -not -path "*/.*" -not -name "*.log"
-semver=v$(shell cat package.json | grep '"version":' | awk -F '"' '{print $$4}')
-commit=$(shell git rev-parse HEAD | head -c 8)
 
 # Pool of images to pull cached layers from during docker build steps
 cache_from=$(shell if [[ -n "${CI}" ]]; then echo "--cache-from=$(project)_builder:latest,$(project)_server:$(commit),$(project)_server:latest,$(project)_webserver:$(commit),$(project)_webserver:latest,$(project)_proxy:$(commit),$(project)_proxy:latest"; else echo ""; fi)
+
+cwd=$(shell pwd)
+commit=$(shell git rev-parse HEAD | head -c 8)
+semver=v$(shell cat package.json | grep '"version":' | awk -F '"' '{print $$4}')
+
+# Setup docker run time
+# If on Linux, give the container our uid & gid so we know what to reset permissions to
+# On Mac, the docker-VM takes care of this for us so pass root's id (ie noop)
+my_id=$(shell id -u):$(shell id -g)
+id=$(shell if [[ "`uname`" == "Darwin" ]]; then echo 0:0; else echo $(my_id); fi)
+interactive=$(shell if [[ -t 0 && -t 2 ]]; then echo "--interactive"; else echo ""; fi)
+docker_run=docker run --name=$(project)_builder $(interactive) --tty --rm --volume=$(cwd):/root $(project)_builder $(id)
 
 startTime=.flags/.startTime
 totalTime=.flags/.totalTime
@@ -85,12 +95,12 @@ node-modules: builder $(shell find modules/*/package.json $(find_options))
 ########################################
 # Compile/Transpile src
 
-client-bundle: core $(shell find modules/client $(find_options))
+client-bundle: node-modules $(shell find modules/client $(find_options))
 	$(log_start)
 	$(docker_run) "cd modules/client && npm run build"
 	$(log_finish) && mv -f $(totalTime) .flags/$@
 
-server-bundle: core $(shell find modules/server $(find_options))
+server-bundle: node-modules $(shell find modules/server $(find_options))
 	$(log_start)
 	$(docker_run) "cd modules/server && npm run build && touch src/entry.ts"
 	$(log_finish) && mv -f $(totalTime) .flags/$@
@@ -104,13 +114,13 @@ proxy: $(shell find ops/proxy $(find_options))
 	docker tag $(project)_proxy:latest $(project)_proxy:$(commit)
 	$(log_finish) && mv -f $(totalTime) .flags/$@
 
-webserver: client-js $(shell find modules/client/ops $(find_options))
+webserver: client-bundle $(shell find modules/client/ops $(find_options))
 	$(log_start)
 	docker build --file modules/client/ops/Dockerfile $(cache_from) --tag $(project)_webserver:latest modules/client
 	docker tag $(project)_webserver:latest $(project)_webserver:$(commit)
 	$(log_finish) && mv -f $(totalTime) .flags/$@
 
-server: server-js $(shell find modules/server/ops $(find_options))
+server: server-bundle $(shell find modules/server/ops $(find_options))
 	$(log_start)
 	docker build --file modules/server/ops/Dockerfile $(cache_from) --tag $(project)_server:latest modules/server
 	docker tag $(project)_server:latest $(project)_server:$(commit)
