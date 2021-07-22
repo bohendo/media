@@ -1,16 +1,47 @@
-# Ignore everything
-*
+# Don't commit personal data or backups
+media
+imports
+albums.conf
+**/*.log
+**/*.tar.gz
+**/.env
 
-# But not these files...
-!.gitignore
-!Makefile
-!bin/*
-!ops/*
+# Cache
+**/.cache
+**/.config
+**/.git
+**/.node-gyp
+**/.npm
+**/.rpt2_cache
+**/*.docker-compose.yml
+**/docker-compose.yml
 
+# Compiled output
+**/build/**
+**/dist/**
+**/node_modules/**
+**/.flags
 
-# ...even if they are in subdirectories
-!*/
+# Backups
+**/*.lerna_backup
 
-# if the files to be tracked are in subdirectories
-!*/a/b/file1.txt
-!*/a/b/c/*
+# OS
+.bash_history
+.DS_Store
+
+# Tests
+.nyc_output
+coverage
+cypress/screenshots
+cypress/videos
+
+# IDEs and editors
+*.launch
+*.sublime-workspace
+*.sw[opq]
+.c9/
+.classpath
+.idea
+.project
+.settings/
+.vscode
