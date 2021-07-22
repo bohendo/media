@@ -65,11 +65,11 @@ mediaRouter.get(`/:category/:filename`, (req, res) => {
     { root: "/media", dotfiles: "deny" },
     (err) => {
       if (err) {
-        log.error(err);
+        log.warn(err.message);
         if (err.message.includes("no such file)")) {
-          res.send("Not Found", STATUS_NOT_FOUND);
+          res.status(STATUS_NOT_FOUND).send("Not Found");
         } else {
-          res.send("Oh No", STATUS_MY_BAD);
+          res.status(STATUS_MY_BAD).send("Oh no");
         }
       } else {
         log.info(`Successfully sent ${filename}`);

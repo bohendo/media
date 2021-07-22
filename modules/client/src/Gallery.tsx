@@ -24,6 +24,7 @@ const useStyles = makeStyles((theme: Theme) => createStyles({
     display: "block",
     margin: "auto",
     maxHeight: "600px",
+    maxWidth: "800px",
   }
 }));
 
@@ -108,6 +109,7 @@ const Gallery = () => {
 
   return (
     <Paper className={classes.paper}>
+
       <TextField
         autoComplete="off"
         value={newFilename || ""}
@@ -160,4 +162,3 @@ const Gallery = () => {
 };
 
 export default Gallery;
-
