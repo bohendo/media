@@ -6,7 +6,7 @@ import {
   makeStyles,
   Theme,
 } from "@material-ui/core/styles";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 const useStyles = makeStyles((theme: Theme) => createStyles({
@@ -28,10 +28,34 @@ const useStyles = makeStyles((theme: Theme) => createStyles({
 const Gallery = () => {
   const [filename, setFilename] = useState("");
   const [image, setImage] = useState(""); // data url
+  const [imgErrors, setImgErrors] = useState({} as { [key: string]: boolean });
   const classes = useStyles();
+
+  useEffect(() => {
+    console.log(`Got image errors`, imgErrors);
+  }, [imgErrors]);
 
   const handleFilenameChange = (event: React.ChangeEvent<{ value: any }>) => {
     setFilename(event.target.value);
+  };
+
+  const handleNext = async () => {
+    if (!filename) return;
+    const res = await axios.get(`/api/media/next/${filename}`);
+    console.log(res);
+    if (typeof res.data === "string") {
+      setFilename(res.data);
+      handleFetch();
+    }
+  };
+
+  const handlePrev = async () => {
+    if (!filename) return;
+    const res = await axios.get(`/api/media/prev/${filename}`);
+    if (typeof res.data === "string") {
+      setFilename(res.data);
+      handleFetch();
+    }
   };
 
   const handleFetch = async () => {
@@ -43,6 +67,28 @@ const Gallery = () => {
     reader.onload = () => {
       setImage(typeof reader.result === "string" ? reader.result : "");
     };
+  };
+
+  const Media = ({
+    alt,
+    src,
+  }: {
+    alt: string;
+    src: string;
+  }) => {
+    return (!imgErrors[alt]
+      ? <img
+        className={classes.photo}
+        onError={() => { if (!imgErrors[alt]) setImgErrors(old => ({ ...old, [alt]: true })); }}
+        src={src}
+        alt={alt}
+      />
+      : <video
+        className={classes.photo}
+        controls
+        src={src}
+      />
+    );
   };
 
   return (
@@ -61,16 +107,30 @@ const Gallery = () => {
       />
 
       <Button
+        onClick={handlePrev}
+        variant="contained"
+        color="primary"
+      >
+        Previous
+      </Button>
+
+      <Button
         onClick={handleFetch}
         variant="contained"
         color="primary"
-        fullWidth
       >
         Fetch
       </Button>
 
-      {image ? <img
-        className={classes.photo}
+      <Button
+        onClick={handleNext}
+        variant="contained"
+        color="primary"
+      >
+        Next
+      </Button>
+
+      {image ? <Media
         src={image}
         alt={filename}
       /> : null}
