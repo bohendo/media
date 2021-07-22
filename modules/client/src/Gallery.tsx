@@ -39,18 +39,22 @@ const Gallery = () => {
   }, [imgErrors]);
 
   useEffect(() => {
-    setNewFilename(filename); // sync up new filename
     setImage(""); // reset image
     (async () => {
       if (!filename) return;
-      const res = await axios.get(`/api/media/${filename}`, { responseType: "blob" });
-      console.log(res);
-      const reader = new window.FileReader();
-      reader.readAsDataURL(res.data);
-      reader.onload = () => {
-        setImgErrors(old => ({ ...old, [filename]: false })); // reset img errors
-        setImage(typeof reader.result === "string" ? reader.result : "");
-      };
+      try {
+        const res = await axios.get(`/api/media/${filename}`, { responseType: "blob" });
+        console.log(res);
+        const reader = new window.FileReader();
+        reader.readAsDataURL(res.data);
+        reader.onload = () => {
+          setImgErrors(old => ({ ...old, [filename]: false })); // reset img errors
+          setImage(typeof reader.result === "string" ? reader.result : "");
+        };
+      } catch (e) {
+        console.warn(e);
+        setFilename("");
+      }
     })();
   }, [filename]);
 
@@ -59,18 +63,18 @@ const Gallery = () => {
   };
 
   const handleNext = async () => {
-    if (!filename) return;
-    const res = await axios.get(`/api/media/next/${filename}`);
+    const res = await axios.get(`/api/media/next/${filename || newFilename}`);
     console.log(res);
     if (typeof res.data === "string") {
+      setNewFilename(res.data);
       setFilename(res.data);
     }
   };
 
   const handlePrev = async () => {
-    if (!filename) return;
-    const res = await axios.get(`/api/media/prev/${filename}`);
+    const res = await axios.get(`/api/media/prev/${filename || newFilename}`);
     if (typeof res.data === "string") {
+      setNewFilename(res.data);
       setFilename(res.data);
     }
   };
@@ -148,7 +152,9 @@ const Gallery = () => {
       {image ? <Media
         src={image}
         alt={filename}
-      /> : <CircularProgress/>}
+      />
+      : filename ? <CircularProgress/>
+      : null}
     </Paper>
   );
 };
