@@ -1,5 +1,3 @@
-import fs from "fs";
-
 import pino from "pino";
 import prettifier from "pino-pretty";
 
@@ -15,7 +13,9 @@ export const getLogger = (level = "warn"): pino.Logger => pino({
   },
   prettifier,
 });
-export const log = getLogger(env.logLevel).child({ module: "Utils" });
+
+export const logger = getLogger(env.logLevel).child({ module: "Utils" });
+const log = logger.child({ module: "Utils" });
 
 export const STATUS_SUCCESS = 200;
 export const STATUS_NOT_FOUND = 404;
