@@ -12,7 +12,7 @@ const authType = "Basic";
 const encodedToken = Buffer.from(`${env.authUsername}:${env.authPassword}`).toString("base64");
 
 const restrictedMethods = ["DELETE", "POST", "PUT"];
-const restrictedPaths = ["/auth", "/ipfs"];
+const restrictedPaths = ["/auth", "/ipfs", "/media"];
 
 authRouter.use((req, res, next) => {
   if (restrictedPaths.includes(req.path) || restrictedMethods.includes(req.method)) {

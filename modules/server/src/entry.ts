@@ -28,7 +28,7 @@ app.use(bodyParser.raw({ limit: env.maxUploadSize, type: [
 ] }));
 app.use(bodyParser.text({ type: ["text/*"] }));
 
-app.use(mediaRouter);
+app.use("/media", mediaRouter);
 
 app.use((req, res) => {
   return getLogAndSend(res)(`not found`, STATUS_NOT_FOUND);
