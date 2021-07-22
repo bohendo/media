@@ -16,7 +16,8 @@
     "express": "4.17.1",
     "nodemon": "2.0.12",
     "pino": "7.0.0-rc.1",
-    "pino-pretty": "5.1.2"
+    "pino-pretty": "5.1.2",
+    "sqlite3": "5.0.2"
   },
   "devDependencies": {
     "@types/node": "15.0.2",

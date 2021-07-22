@@ -1,26 +1,45 @@
 import React from "react";
+import CssBaseline from "@material-ui/core/CssBaseline";
+import {
+  createMuiTheme,
+  createStyles,
+  makeStyles,
+  Theme,
+  ThemeProvider,
+} from "@material-ui/core/styles";
 
-import logo from "./logo.svg";
 import "./App.css";
+import Gallery from "./Gallery";
+
+const darkTheme = createMuiTheme({
+  palette: {
+    primary: {
+      main: "#deaa56",
+    },
+    secondary: {
+      main: "#e699a6",
+    },
+    type: "dark",
+  },
+});
+
+const useStyles = makeStyles((theme: Theme) => createStyles({
+  main: {
+    flexGrow: 1,
+    overflow: "auto",
+    margin: theme.spacing(4),
+  },
+}));
 
 const App = () => {
+  const classes = useStyles();
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <ThemeProvider theme={darkTheme}>
+      <CssBaseline />
+      <main className={classes.main}>
+        <Gallery/>
+      </main>
+    </ThemeProvider>
   );
 };
 
