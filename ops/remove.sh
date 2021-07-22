@@ -4,10 +4,11 @@ fail="❌"
 good="✅"
 
 media=${MEDIA_DIR:-$HOME/Media} 
-trash=$media/.trash
+mkdir -p "$media"
 
-if [[ ! -f "$trash" ]]
-then touch "$trash"
+index=$media/.index
+if [[ ! -f "$index" ]]
+then touch "$index"
 fi
 
 target=$(basename "$1")
@@ -15,15 +16,20 @@ if ! [[ "$target" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.[0-9a-z]{2,5}$ ]]
 then echo "$fail Invalid target provided: $target" && exit 1
 fi
 
-path="$media/camera/$target"
+entry=$(grep -m 1 "$target$" "$index" || true)
+
+path="${entry#*:}"
 if ! [[ -f "$path" ]]
 then echo "$fail Can't find a target at $path" && exit 1
 fi
 
-full_digest=$(sha256sum "$path" | cut -d " " -f 1)
-
-if ! grep -qs "$full_digest" < "$trash"
-then echo "$full_digest" >> "$trash"
+if [[ -n "$entry" && "$entry" == *:* ]]
+then
+  mv "$index" "$index.backup"
+  sed "s/$entry/${entry%:*}:/" < "$index.backup" > "$index"
+  rm "$index.backup"
+else
+  echo "$fail File is not in the index: $target" && exit 1
 fi
 
 rm -f "$path"

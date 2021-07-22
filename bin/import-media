@@ -70,9 +70,26 @@ if [[ ! -f "$index" ]]
 then touch "$index"
 fi
 
-entry=$(grep "$target_hash" "$index" || true)
+entry=$(grep -m1 "^$target_hash:" "$index" || true)
 if [[ -n "$entry" && "$entry" == *:* ]]
-then echo "$good File has already been imported & is available at ${entry#*:}" && exit 0
+then
+  path=${entry#*:}
+  if [[ -n "$path" ]]
+  then
+    echo "$good File has already been imported & is available at $path"
+    if [[ "$dryrun" == "false" && "$remove" == "true" ]]
+    then
+      dup_suffix=$(sha256sum "$media/$path" | cut -d " " -f 1 | head -c 8)
+      if [[ "$path" =~ .*-$dup_suffix\..* ]]
+      then rm -f "$target" && echo "$warn Removed $target"
+      else echo "$fail Invalid file exists at $path (expected suffix of $dup_suffix)" && exit 1
+      fi
+    fi
+  else
+    echo "$good File has already been imported & deleted"
+  fi
+  
+  exit 0
 fi
 
 dotype=${target##*.}
@@ -217,12 +234,13 @@ then
   dup_digest=$(sha256sum "$path" | cut -d " " -f 1)
   dup_suffix=$(echo "$dup_digest" | head -c 8)
   if [[ "$path" =~ .*-$dup_suffix\..* ]]
-  then echo "$good Valid file already exists at $path"
+  then echo "$good Valid file already exists at $subpath"
   else echo "$fail Invalid file exists at $path (expected suffix of $dup_suffix)" && exit 1
   fi
   if [[ "$dryrun" == "false" ]]
   then
     echo "$target_hash:$subpath" >> "$index"
+    echo "$warn Added index entry for $target_hash:$subpath"
     if [[ "$remove" == "true" ]]
     then rm -f "$target" && echo "$warn Removed $target"
     fi
@@ -247,6 +265,7 @@ then
   exit 1
 fi
 
+# Copy target into media & add it to the index
 if [[ "$dryrun" == "true" ]]
 then echo "$good Import $target to $subpath"
 elif [[ "$dryrun" == "false" ]]
@@ -254,7 +273,6 @@ then
   cp -i "$tmp_target" "$path"
   echo "$good Imported $target to $subpath"
   echo "$target_hash:$subpath" >> "$index"
-
   if [[ "$remove" == "true" ]]
   then
     dup_suffix=$(sha256sum "$path" | cut -d " " -f 1 | head -c 8)
