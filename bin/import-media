@@ -20,8 +20,10 @@ media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
 
 tmp="/tmp/media"
-rm -rf "$tmp"
 mkdir -p "$tmp"
+
+####################
+## parse args
 
 target="$1"
 if [[ ! -f "$target" ]]
@@ -58,28 +60,20 @@ then remove="true"
 else remove="false"
 fi
 
-function getCreateDate {
-  exiftool -CreateDate "$1" 2> /dev/null \
-    | sed 's/.*  ://' \
-    | sed 's/: /:0/g' \
-    | sed 's/://g' \
-    | sed 's/\+.*//g' \
-    | sed 's/ /-/g' \
-    | sed 's/-$//' \
-    | sed 's/^-//'
-}
+####################
+## Ensure target is valid & not a duplicate
 
-function setCreateDate {
-  t="$1"
-  d="$2"
-  exiftool -CreateDate="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}" "$t" > /dev/null
-  created=$(getCreateDate "$t")
-  original="${t}_original"
-  if [[ "$original" != "$tmp/$(basename "${t}_original")" ]]
-  then mv -f "$original" "$tmp/$(basename "${t}_original")"
-  fi
-  echo "$good Updated exif data for $t w new create date: ${created}"
-}
+target_hash=$(sha256sum "$target" | cut -d " " -f 1)
+
+index=$media/.index
+if [[ ! -f "$index" ]]
+then touch "$index"
+fi
+
+entry=$(grep "$target_hash" "$index" || true)
+if [[ -n "$entry" && "$entry" == *:* ]]
+then echo "$good File has already been imported & is available at ${entry#*:}" && exit 0
+fi
 
 dotype=${target##*.}
 ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
@@ -98,35 +92,72 @@ if [[ \
 then echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
 fi
 
+exiftool "$target" > /dev/null
+res=$?
+if [[ "$res" != "0" ]]
+then echo "Invalid exif data for $target" && exit 1
+fi
+
+####################
+## set create date
+
+tmp_target="$tmp/$(basename "$target")"
+rm -rf "$tmp_target"
+cp "$target" "$tmp_target"
+chmod 644 "$tmp_target"
+
+function getCreateDate {
+  exiftool -CreateDate "$1" 2> /dev/null \
+    | sed 's/.*  ://' \
+    | sed 's/: /:0/g' \
+    | sed 's/://g' \
+    | sed 's/\+.*//g' \
+    | sed 's/ /-/g' \
+    | sed 's/-$//' \
+    | sed 's/^-//'
+}
+
+function setCreateDate {
+  t="$1"
+  d="$2"
+  exiftool -ignoreMinorErrors -CreateDate="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}" "$t" > /dev/null
+  created=$(getCreateDate "$t")
+  original="${t}_original"
+  if [[ "$original" != "$tmp/$(basename "${t}_original")" ]]
+  then mv -f "$original" "$tmp/$(basename "${t}_original")"
+  fi
+  echo "Updated exif data for $t w new create date: ${created}"
+}
+
 created=$(getCreateDate "$target")
 if [[ -z "$created" ]]
 then
 
   if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
   then
-    setCreateDate "$target" "$(echo "$target" | cut -d "-" -f 2)-000000"
-    created=$(getCreateDate "$target")
+    setCreateDate "$tmp_target" "$(echo "$target" | cut -d "-" -f 2)-000000"
+    created=$(getCreateDate "$tmp_target")
 
   # eg 2019-10-26 10.36.10.jpg
   elif [[ "$target" =~ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}\.[[:digit:]]{2}\.[[:digit:]]{2}.* ]]
   then
-    setCreateDate "$target" "$(basename "$target" | sed 's/-//g' | sed 's/ /-/g' | sed 's/\.//' | sed 's/\.//' | sed 's/\..*//')"
-    created=$(getCreateDate "$target")
+    setCreateDate "$tmp_target" "$(basename "$target" | sed 's/-//g' | sed 's/ /-/g' | sed 's/\.//' | sed 's/\.//' | sed 's/\..*//')"
+    created=$(getCreateDate "$tmp_target")
 
   # eg SmartSelect_20200613-210904_Prime Video.jpg
   elif [[ "$target" =~ _[[:digit:]]{8}-[[:digit:]]{6}_*.* ]]
   then
-    setCreateDate "$target" "$(basename "$target" | cut -d "_" -f 2)"
-    created=$(getCreateDate "$target")
+    setCreateDate "$tmp_target" "$(basename "$target" | cut -d "_" -f 2)"
+    created=$(getCreateDate "$tmp_target")
 
   # eg Screenshot from 2020-08-26 14-03-02.png
   elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}-[[:digit:]]{2}-[[:digit:]]{2}.* ]]
   then
-    setCreateDate "$target" "$(basename "$target" | cut -d " " -f 3-4 | sed 's/\..*//' | sed 's/-//g' | sed 's/ /-/')"
-    created=$(getCreateDate "$target")
+    setCreateDate "$tmp_target" "$(basename "$target" | cut -d " " -f 3-4 | sed 's/\..*//' | sed 's/-//g' | sed 's/ /-/')"
+    created=$(getCreateDate "$tmp_target")
 
   else
-    setCreateDate "$target" "00000000-000000"
+    setCreateDate "$tmp_target" "00000000-000000"
     created="00000000-000000" # TODO: check to see if the filename includes a date?
   fi
 
@@ -141,13 +172,14 @@ then
   if [[ -z "$(command -v heif-convert)" ]]
   then echo "$fail Install heif-convert first" && exit 1
   fi
-  tmpTarget="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.jpg/')"
-  if [[ -f "$tmpTarget" ]]
-  then rm -f "$tmpTarget"
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.jpg/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
   fi
-  echo "$warn Converting heic-formatted $target into an jpg at $tmpTarget"
-  heif-convert -q95 "$target" "$tmpTarget" > /dev/null
-  target="$tmpTarget"
+  echo "Converting heic-formatted $target into an jpg at $new_target"
+  heif-convert -q95 "$target" "$new_target" > /dev/null
+  setCreateDate "$new_target" "$created"
+  tmp_target="$new_target"
   ext="jpg"
 fi
 
@@ -155,94 +187,76 @@ fi
 # Do we need to rm data streams? https://github.com/aminyazdanpanah/PHP-FFmpeg-video-streaming/issues/74
 if [[ "$ext" == "3gp" || "$ext" == "avi" || "$ext" == "m4a" || "$ext" == "mov" ]]
 then
-  tmpTarget="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
-  if [[ -f "$tmpTarget" ]]
-  then rm -f "$tmpTarget"
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
   fi
-  echo "$warn Converting $ext-formatted $target into an mp4 at $tmpTarget"
-  ffmpeg -i "$target" -loglevel error -crf 18 -f mp4 "$tmpTarget"
-  setCreateDate "$tmpTarget" "$created"
-  target="$tmpTarget"
+  echo "Converting $ext-formatted $target into an mp4 at $new_target"
+  ffmpeg -i "$target" -loglevel error -crf 18 -f mp4 "$new_target"
+  setCreateDate "$new_target" "$created"
+  tmp_target="$new_target"
   ext="mp4"
 fi
 
 ########################################
-## Check digest & import
+## Import
 
-full_digest=$(sha256sum "$target" | cut -d " " -f 1)
-digest=$(echo "$full_digest" | head -c 8)
+new_hash=$(sha256sum "$tmp_target" | cut -d " " -f 1)
+suffix=$(echo "$new_hash" | head -c 8)
 
-name="$created-$digest.$ext"
-
-path="$media/$category/$name"
+name="$created-$suffix.$ext"
+subpath="$category/$name"
+path="$media/$subpath"
 if [[ ! -d "$(dirname "$path")" ]]
-then mkdir "$(dirname "$path")"
+then mkdir -p "$(dirname "$path")"
 fi
 
-trash=$media/.trash
-if [[ ! -f "$trash" ]]
-then touch "$trash"
-fi
-
-if grep -qs "$full_digest" < "$trash"
-then echo "$warn $name has already been deleted, skipping import" && exit 0
-fi
-
+# If this file already exists, check to make sure it's valid & maybe delete the input file
 if [[ -f "$path" ]]
 then
   dup_digest=$(sha256sum "$path" | cut -d " " -f 1)
-  if [[ "$dup_digest" == "$full_digest" ]]
-  then echo "$good Destination $path already exists w the same digest as $target"
-  else echo "$fail Destination $path already exists w DIFFERENT digest than $target" && exit 1
+  dup_suffix=$(echo "$dup_digest" | head -c 8)
+  if [[ "$path" =~ .*-$dup_suffix\..* ]]
+  then echo "$good Valid file already exists at $path"
+  else echo "$fail Invalid file exists at $path (expected suffix of $dup_suffix)" && exit 1
   fi
-
   if [[ "$dryrun" == "false" && "$remove" == "true" ]]
-  then
-    if [[ "$(sha256sum "$target" | cut -d " " -f 1)" == "$(sha256sum "$path" | cut -d " " -f 1)" ]]
-    then rm -f "$target" && echo "$warn Removed $target"
-    else echo "Copy failure, not removing target" && exit 1
-    fi
+  then rm -f "$target" && echo "$warn Removed $target"
   fi
-
   exit
 fi
 
-# Check for other files in media w the same digest
-if ! dups=$(find "$media/" -type "f" -name "*-$digest.*")
-then echo "$fail Failed to search for files with digest of $digest" && exit 1
+# Check for other files in media w the same hash
+if ! dups=$(find "$media/" -type "f" -name "*-$suffix.*")
+then echo "$fail Failed to search for files with hash of $suffix" && exit 1
 fi
 if [[ -n "$dups" ]]
 then
   for dup in $dups
   do
     dup_digest=$(sha256sum "$dup" | cut -d " " -f 1)
-    if [[ "$dup_digest" == "$full_digest" ]]
-    then echo "$good $dup & target have same digest: $dup_digest"
-    else echo "$warn $dups ($dup_digest) & target ($full_digest) have similar digests"
+    if [[ "$dup_digest" == "$target_hash" ]]
+    then echo "$good $dup & target have same hash: $dup_digest"
+    else echo "$warn $dups ($dup_digest) & target ($target_hash) have similar digests"
     fi
   done
   exit 1
 fi
 
 if [[ "$dryrun" == "true" ]]
-then echo "$good Copy $target to $path"
+then echo "$good Import $target to $subpath"
 elif [[ "$dryrun" == "false" ]]
 then
-  cp -i "$target" "$path"
-  echo "$good Copied $target to $path"
-  chmod 644 "$path"
+  cp -i "$tmp_target" "$path"
+  echo "$good Imported $target to $subpath"
+  echo "$target_hash:$subpath" >> "$index"
 
   if [[ "$remove" == "true" ]]
   then
-    if [[ "$(sha256sum "$target" | cut -d " " -f 1)" == "$(sha256sum "$path" | cut -d " " -f 1)" ]]
+    dup_suffix=$(sha256sum "$path" | cut -d " " -f 1 | head -c 8)
+    if [[ "$path" =~ .*-$dup_suffix\..* ]]
     then rm -f "$target" && echo "$warn Removed $target"
-    else echo "Copy failure, not removing target" && exit 1
+    else echo "$fail Invalid file exists at $path (expected suffix of $dup_suffix)" && exit 1
     fi
   fi
-
-else
-  echo "Use the 2nd arg to specify whether or not you actually want to make changes"
-  echo "  -n  No I don't want to make changes, show me what the changes would be"
-  echo "  -y  Yes I want to make changes"
-  echo "  -p  Yes I want to make changes but keep things private"
 fi
