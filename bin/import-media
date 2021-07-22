@@ -1,13 +1,12 @@
 #!/bin/bash
 set -e
 
-media=${MEDIA_DIR:-$HOME/Media}
-tmp="/tmp/media"
-mkdir -p "$tmp"
-
-fail="❌"
 good="✅"
 warn="⚠️ "
+fail="❌"
+
+####################
+## assert & setup env
 
 if [[ -z "$(command -v exiftool)" ]]
 then echo "$fail Install exiftool first" && exit 1
@@ -17,28 +16,41 @@ if [[ -z "$(command -v ffmpeg)" ]]
 then echo "$fail Install ffmpeg first" && exit 1
 fi
 
-if [[ ! -d "$media" ]]
-then mkdir -p "$media"
-fi
+media=${MEDIA_DIR:-$HOME/Media}
+mkdir -p "$media"
+
+tmp="/tmp/media"
+rm -rf "$tmp"
+mkdir -p "$tmp"
 
 target="$1"
 if [[ ! -f "$target" ]]
 then echo "$fail File does not exist at $target" && exit 1
 fi
 
-for_real="$2"
-if [[ -z "$for_real" ]]
+categories=(camera screenshots private)
+category="$2"
+if [[ -z "$category" ]]
 then
-  echo "Use the 2nd arg to specify whether or not you actually want to make changes"
-  echo "  -n  No I don't want to make changes, show me what the changes would be"
-  echo "  -y  Yes I want to make changes"
-  echo "  -p  Yes I want to make changes but keep things private"
+  echo "Use the 2nd arg to specify the category of the imported media"
+  echo "Valid categories: ${categories[*]}"
+  exit 1;
+elif ! grep -w -q "$category" <<<"${categories[*]}"
+then
+  echo "Category $category is invalid"
+  echo "Valid categories: ${categories[*]}"
   exit 1;
 fi
 
-if [[ "$3" == "--private" ]]
-then privacy="private"
-else privacy="camera"
+if [[ "$3" == "-y" || "$3" == "--yes" ]]
+then dryrun="false"
+elif [[ "$3" == "-n" || "$3" == "--no" ]]
+then dryrun="true"
+else
+  echo "Use the 3rd arg to specify whether or not you actually want to make changes"
+  echo "  -n  No I don't want to make changes, show me what the changes would be"
+  echo "  -y  Yes I want to make changes"
+  exit 1;
 fi
 
 if [[ "$4" == "--rm" || "$4" == "--remove" ]]
@@ -162,7 +174,7 @@ digest=$(echo "$full_digest" | head -c 8)
 
 name="$created-$digest.$ext"
 
-path="$media/$privacy/$name"
+path="$media/$category/$name"
 if [[ ! -d "$(dirname "$path")" ]]
 then mkdir "$(dirname "$path")"
 fi
@@ -184,7 +196,7 @@ then
   else echo "$fail Destination $path already exists w DIFFERENT digest than $target" && exit 1
   fi
 
-  if [[ "$for_real" == "-y" && "$remove" == "true" ]]
+  if [[ "$dryrun" == "false" && "$remove" == "true" ]]
   then
     if [[ "$(sha256sum "$target" | cut -d " " -f 1)" == "$(sha256sum "$path" | cut -d " " -f 1)" ]]
     then rm -f "$target" && echo "$warn Removed $target"
@@ -212,9 +224,9 @@ then
   exit 1
 fi
 
-if [[ "$for_real" == "-n" ]]
+if [[ "$dryrun" == "true" ]]
 then echo "$good Copy $target to $path"
-elif [[ "$for_real" == "-y" ]]
+elif [[ "$dryrun" == "false" ]]
 then
   cp -i "$target" "$path"
   echo "$good Copied $target to $path"
