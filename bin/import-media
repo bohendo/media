@@ -20,6 +20,7 @@ media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
 
 tmp="/tmp/media"
+rm -rf "$tmp"
 mkdir -p "$tmp"
 
 ####################
