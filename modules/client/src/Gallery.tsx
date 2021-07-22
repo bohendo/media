@@ -1,6 +1,8 @@
+import Button from "@material-ui/core/Button";
+import CircularProgress from "@material-ui/core/CircularProgress";
 import Paper from "@material-ui/core/Paper";
 import TextField from "@material-ui/core/TextField";
-import Button from "@material-ui/core/Button";
+import Typography from "@material-ui/core/Typography";
 import {
   createStyles,
   makeStyles,
@@ -15,17 +17,18 @@ const useStyles = makeStyles((theme: Theme) => createStyles({
     overflow: "auto",
     margin: theme.spacing(4),
     padding: theme.spacing(4),
-    minHeight: "100%",
+    minHeight: "850px",
   },
   photo: {
     padding: theme.spacing(4),
     display: "block",
     margin: "auto",
-    maxWidth: "100%",
+    maxHeight: "600px",
   }
 }));
 
 const Gallery = () => {
+  const [newFilename, setNewFilename] = useState("");
   const [filename, setFilename] = useState("");
   const [image, setImage] = useState(""); // data url
   const [imgErrors, setImgErrors] = useState({} as { [key: string]: boolean });
@@ -35,8 +38,24 @@ const Gallery = () => {
     console.log(`Got image errors`, imgErrors);
   }, [imgErrors]);
 
+  useEffect(() => {
+    setNewFilename(filename); // sync up new filename
+    setImage(""); // reset image
+    (async () => {
+      if (!filename) return;
+      const res = await axios.get(`/api/media/${filename}`, { responseType: "blob" });
+      console.log(res);
+      const reader = new window.FileReader();
+      reader.readAsDataURL(res.data);
+      reader.onload = () => {
+        setImgErrors(old => ({ ...old, [filename]: false })); // reset img errors
+        setImage(typeof reader.result === "string" ? reader.result : "");
+      };
+    })();
+  }, [filename]);
+
   const handleFilenameChange = (event: React.ChangeEvent<{ value: any }>) => {
-    setFilename(event.target.value);
+    setNewFilename(event.target.value);
   };
 
   const handleNext = async () => {
@@ -45,7 +64,6 @@ const Gallery = () => {
     console.log(res);
     if (typeof res.data === "string") {
       setFilename(res.data);
-      handleFetch();
     }
   };
 
@@ -54,19 +72,12 @@ const Gallery = () => {
     const res = await axios.get(`/api/media/prev/${filename}`);
     if (typeof res.data === "string") {
       setFilename(res.data);
-      handleFetch();
     }
   };
 
   const handleFetch = async () => {
-    if (!filename) return;
-    const res = await axios.get(`/api/media/${filename}`, { responseType: "blob" });
-    console.log(res);
-    const reader = new window.FileReader();
-    reader.readAsDataURL(res.data); 
-    reader.onload = () => {
-      setImage(typeof reader.result === "string" ? reader.result : "");
-    };
+    if (!newFilename) return;
+    setFilename(newFilename);
   };
 
   const Media = ({
@@ -95,7 +106,7 @@ const Gallery = () => {
     <Paper className={classes.paper}>
       <TextField
         autoComplete="off"
-        value={filename || ""}
+        value={newFilename || ""}
         helperText="Path to target file"
         id="filename"
         fullWidth
@@ -130,10 +141,14 @@ const Gallery = () => {
         Next
       </Button>
 
+      <Typography>
+        {filename}
+      </Typography>
+
       {image ? <Media
         src={image}
         alt={filename}
-      /> : null}
+      /> : <CircularProgress/>}
     </Paper>
   );
 };
