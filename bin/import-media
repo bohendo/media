@@ -16,6 +16,10 @@ if [[ -z "$(command -v ffmpeg)" ]]
 then echo "$fail Install ffmpeg first" && exit 1
 fi
 
+if [[ -z "$(command -v sqlite3)" ]]
+then echo "$fail Install sqlite3 first" && exit 1
+fi
+
 media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
 
@@ -66,40 +70,40 @@ fi
 
 target_hash=$(sha256sum "$target" | cut -d " " -f 1)
 
+index=$media/index.sqlite
+if [[ ! -f "$index" ]]
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+fi
+
 function getEntry {
-  jq '.["'"$target_hash"'"]' "$index" 2>&1 | tr -d '"'
+  sqlite3 "$index" "select path from media where hash = '$target_hash';"
 }
 
 function setEntry {
-  mv "$index" "$index.backup"
-  jq '.["'"$target_hash"'"] = "'"$1"'"' "$index.backup" > "$index"
-  rm "$index.backup"
+  sqlite3 "$index" "insert into media values('$target_hash','$1');"
 }
 
-index=$media/.index.json
-if [[ ! -f "$index" ]]
-then echo '{}' > "$index"
-fi
-
 entry=$(getEntry "$target_hash")
-if [[ "$entry" != "null" ]]
+if [[ -n "$entry" ]]
 then
-  if [[ -n "$entry" ]]
+  echo "$good File has already been imported & is available at $entry"
+  if [[ "$dryrun" == "false" && "$remove" == "true" ]]
   then
-    echo "$good File has already been imported & is available at $entry"
-    if [[ "$dryrun" == "false" && "$remove" == "true" ]]
-    then
-      dup_suffix=$(sha256sum "$media/$entry" | cut -d " " -f 1 | head -c 8)
-      if [[ "$entry" =~ .*-$dup_suffix\..* ]]
-      then rm -f "$target" && echo "$warn Removed $target"
-      else echo "$fail Invalid file exists at $entry (expected suffix of $dup_suffix)" && exit 1
-      fi
+    dup_suffix=$(sha256sum "$media/$entry" | cut -d " " -f 1 | head -c 8)
+    if [[ "$entry" =~ .*-$dup_suffix\..* ]]
+    then rm -f "$target" && echo "$warn Removed $target"
+    else echo "$fail Invalid file exists at $entry (expected suffix of $dup_suffix)" && exit 1
     fi
-  else
-    echo "$good File has already been imported & deleted"
   fi
-  
   exit 0
+
+elif [[ "$entry" == "null" ]]
+then
+  echo "$good File w hash $target_hash has already been imported & deleted"
+  if [[ "$dryrun" == "false" && "$remove" == "true" ]]
+  then rm -f "$target" && echo "$warn Removed $target"
+  fi
+
 fi
 
 dotype=${target##*.}
@@ -114,6 +118,7 @@ if [[ \
   "$ext" != "m4v" &&\
   "$ext" != "mov" &&\
   "$ext" != "mp4" &&\
+  "$ext" != "pdf" &&\
   "$ext" != "png" \
   ]]
 then echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
@@ -256,23 +261,6 @@ then
     fi
   fi
   exit
-fi
-
-# Check for other files in media w the same hash
-if ! dups=$(find "$media/" -type "f" -name "*-$suffix.*")
-then echo "$fail Failed to search for files with hash of $suffix" && exit 1
-fi
-if [[ -n "$dups" ]]
-then
-  for dup in $dups
-  do
-    dup_digest=$(sha256sum "$dup" | cut -d " " -f 1)
-    if [[ "$dup_digest" == "$target_hash" ]]
-    then echo "$good $dup & target have same hash: $dup_digest"
-    else echo "$warn $dups ($dup_digest) & target ($target_hash) have similar digests"
-    fi
-  done
-  exit 1
 fi
 
 # Copy target into media & add it to the index
