@@ -91,6 +91,7 @@ function setCreateDate {
   date="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}"
   if ! exiftool -ignoreMinorErrors -CreateDate="$date" "$t" > /dev/null
   then
+    echo "Attmpting to repair broken exif data..."
     # Rewrite all valid exif metadata if some was corrupted (see https://exiftool.org/faq.html#Q20)
     if ! exiftool -all= -tagsfromfile @ -all:all -unsafe -icc_profile -CreateDate="$date" "$t" > /dev/null
     then echo "$fail Failed to set $t CreateDate to $d" && exit 1
@@ -155,6 +156,7 @@ ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
 
 if [[ \
   "$ext" != "3gp" &&\
+  "$ext" != "aax" &&\
   "$ext" != "avi" &&\
   "$ext" != "doc" &&\
   "$ext" != "docx" &&\
@@ -224,7 +226,7 @@ then
   then rm -f "$new_target"
   fi
   echo "Converting $ext-formatted $target into an mp3 at $new_target"
-  ffmpeg -i "$target" -loglevel error -crf 18 -f mp3 "$new_target"
+  ffmpeg -i "$target" -loglevel error -f mp3 "$new_target"
   tmp_target="$new_target"
   ext="mp3"
 fi
@@ -246,7 +248,9 @@ fi
 ## set create date
 
 created=$(getCreateDate "$target")
-if [[ -z "$created" && "$ext" != "mp3" ]]
+if [[ "$ext" = "mp3" ]]
+then echo "Skipping create date modification for mp3 file"
+elif [[ -z "$created" || "$created" == "00000000-000000" ]]
 then
 
   if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
@@ -270,6 +274,28 @@ then
   elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}-[[:digit:]]{2}-[[:digit:]]{2}.* ]]
   then
     setCreateDate "$tmp_target" "$(basename "$target" | cut -d " " -f 3-4 | sed 's/\..*//' | sed 's/-//g' | sed 's/ /-/')"
+    created=$(getCreateDate "$tmp_target")
+
+  # eg Screenshot 2020-10-21 at 1.23.20 AM.png
+  elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ AM.* ]]
+  then
+    date="$(basename "$target" | cut -d " " -f 2)"
+    time="$(basename "$target" | cut -d " " -f 4)"
+    hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n<10) print 0; n" )"
+    min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
+    sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
+    setCreateDate "$tmp_target" "$date-$hour$min$sec"
+    created=$(getCreateDate "$tmp_target")
+
+  # eg Screenshot 2020-10-21 at 1.23.20 PM.png
+  elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM.* ]]
+  then
+    date="$(basename "$target" | cut -d " " -f 2)"
+    time="$(basename "$target" | cut -d " " -f 4)"
+    hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); n+12" )"
+    min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
+    sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
+    setCreateDate "$tmp_target" "$date-$hour$min$sec"
     created=$(getCreateDate "$tmp_target")
 
   else
