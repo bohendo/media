@@ -35,31 +35,22 @@ then echo "$fail File does not exist at $target" && exit 1
 fi
 
 categories=(audio camera docs screenshots private)
-category="$2"
-if [[ -z "$category" ]]
+given_category="$2"
+if [[ -n "$given_category" && "$given_category" != -* ]] && ! grep -w -q "$given_category" <<<"${categories[*]}"
 then
-  echo "Use the 2nd arg to specify the category of the imported media"
-  echo "Valid categories: ${categories[*]}"
-  exit 1;
-elif ! grep -w -q "$category" <<<"${categories[*]}"
-then
-  echo "Category $category is invalid"
+  echo "Category $given_category is invalid"
   echo "Valid categories: ${categories[*]}"
   exit 1;
 fi
 
-if [[ "$3" == "-y" || "$3" == "--yes" ]]
-then dryrun="false"
-elif [[ "$3" == "-n" || "$3" == "--no" ]]
+## Extra flags
+
+if [[ "$2" == "--dry-run" || "$3" == "--dry-run" || "$4" == "--dry-run" ]]
 then dryrun="true"
-else
-  echo "Use the 3rd arg to specify whether or not you actually want to make changes"
-  echo "  -n  No I don't want to make changes, show me what the changes would be"
-  echo "  -y  Yes I want to make changes"
-  exit 1;
+else dryrun="false"
 fi
 
-if [[ "$4" == "--rm" || "$4" == "--remove" ]]
+if [[ "$2" == "--rm" || "$3" == "--rm" || "$4" == "--rm" ]]
 then remove="true"
 else remove="false"
 fi
@@ -155,25 +146,41 @@ dotype=${target##*.}
 ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
 
 if [[ \
-  "$ext" != "3gp" &&\
-  "$ext" != "aax" &&\
-  "$ext" != "avi" &&\
-  "$ext" != "doc" &&\
-  "$ext" != "docx" &&\
-  "$ext" != "gif" &&\
-  "$ext" != "heic" &&\
-  "$ext" != "html" &&\
-  "$ext" != "jpg" &&\
-  "$ext" != "m4v" &&\
-  "$ext" != "mov" &&\
-  "$ext" != "mp3" &&\
-  "$ext" != "mp4" &&\
-  "$ext" != "odt" &&\
-  "$ext" != "pdf" &&\
-  "$ext" != "png" &&\
-  "$ext" != "wmv" \
+  "$ext" == "3gp" ||\
+  "$ext" == "avi" ||\
+  "$ext" == "gif" ||\
+  "$ext" == "heic" ||\
+  "$ext" == "jpg" ||\
+  "$ext" == "m4v" ||\
+  "$ext" == "mov" ||\
+  "$ext" == "mp4" ||\
+  "$ext" == "wmv" \
   ]]
-then echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
+then
+  category=${given_category:-camera};
+elif [[ \
+  "$ext" == "png" \
+  ]]
+then
+  category=${given_category:-screenshots};
+elif [[ \
+  "$ext" == "aax" ||\
+  "$ext" == "mp3" \
+  ]]
+then
+  category=${given_category:-audio};
+elif [[ \
+  "$ext" == "csv" ||\
+  "$ext" == "doc" ||\
+  "$ext" == "docx" ||\
+  "$ext" == "html" ||\
+  "$ext" == "odt" ||\
+  "$ext" == "pdf" \
+  ]]
+then
+  category=${given_category:-docs};
+else
+  echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" || exit 1
 fi
 
 if ! exiftool "$target" > /dev/null
@@ -248,8 +255,8 @@ fi
 ## set create date
 
 created=$(getCreateDate "$target")
-if [[ "$ext" = "mp3" ]]
-then echo "Skipping create date modification for mp3 file"
+if [[ "$ext" == "mp3" || "$ext" == "csv" ]]
+then echo "Skipping create date modification for $ext file"
 elif [[ -z "$created" || "$created" == "00000000-000000" ]]
 then
 
