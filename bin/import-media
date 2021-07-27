@@ -5,6 +5,9 @@ good="✅"
 warn="⚠️ "
 fail="❌"
 
+categories=(audio camera docs screenshots private)
+datename_types=(gif jpg mp4 png) # these file types are named yyyymmdd-hhmmss-<hash>.ext
+
 ####################
 ## assert & setup env
 
@@ -34,7 +37,6 @@ if [[ ! -f "$target" ]]
 then echo "$fail File does not exist at $target" && exit 1
 fi
 
-categories=(audio camera docs screenshots private)
 given_category="$2"
 if [[ -n "$given_category" && "$given_category" != -* ]] && ! grep -w -q "$given_category" <<<"${categories[*]}"
 then
@@ -174,6 +176,7 @@ elif [[ \
   "$ext" == "doc" ||\
   "$ext" == "docx" ||\
   "$ext" == "html" ||\
+  "$ext" == "json" ||\
   "$ext" == "odt" ||\
   "$ext" == "pdf" \
   ]]
@@ -254,62 +257,62 @@ fi
 ####################
 ## set create date
 
-created=$(getCreateDate "$target")
-if [[ "$ext" == "mp3" || "$ext" == "csv" ]]
-then echo "Skipping create date modification for $ext file"
-elif [[ -z "$created" || "$created" == "00000000-000000" ]]
+if grep -w -q "$ext" <<<"${datename_types[*]}"
 then
-
-  if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
+  created=$(getCreateDate "$target")
+  if [[ -z "$created" || "$created" == "00000000-000000" ]]
   then
-    setCreateDate "$tmp_target" "$(echo "$target" | cut -d "-" -f 2)-000000"
-    created=$(getCreateDate "$tmp_target")
 
-  # eg 2019-10-26 10.36.10.jpg
-  elif [[ "$target" =~ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}\.[[:digit:]]{2}\.[[:digit:]]{2}.* ]]
-  then
-    setCreateDate "$tmp_target" "$(basename "$target" | sed 's/-//g' | sed 's/ /-/g' | sed 's/\.//' | sed 's/\.//' | sed 's/\..*//')"
-    created=$(getCreateDate "$tmp_target")
+    if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
+    then
+      setCreateDate "$tmp_target" "$(echo "$target" | cut -d "-" -f 2)-000000"
+      created=$(getCreateDate "$tmp_target")
 
-  # eg SmartSelect_20200613-210904_Prime Video.jpg
-  elif [[ "$target" =~ _[[:digit:]]{8}-[[:digit:]]{6}_*.* ]]
-  then
-    setCreateDate "$tmp_target" "$(basename "$target" | cut -d "_" -f 2)"
-    created=$(getCreateDate "$tmp_target")
+    # eg 2019-10-26 10.36.10.jpg
+    elif [[ "$target" =~ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}\.[[:digit:]]{2}\.[[:digit:]]{2}.* ]]
+    then
+      setCreateDate "$tmp_target" "$(basename "$target" | sed 's/-//g' | sed 's/ /-/g' | sed 's/\.//' | sed 's/\.//' | sed 's/\..*//')"
+      created=$(getCreateDate "$tmp_target")
 
-  # eg Screenshot from 2020-08-26 14-03-02.png
-  elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}-[[:digit:]]{2}-[[:digit:]]{2}.* ]]
-  then
-    setCreateDate "$tmp_target" "$(basename "$target" | cut -d " " -f 3-4 | sed 's/\..*//' | sed 's/-//g' | sed 's/ /-/')"
-    created=$(getCreateDate "$tmp_target")
+    # eg SmartSelect_20200613-210904_Prime Video.jpg
+    elif [[ "$target" =~ _[[:digit:]]{8}-[[:digit:]]{6}_*.* ]]
+    then
+      setCreateDate "$tmp_target" "$(basename "$target" | cut -d "_" -f 2)"
+      created=$(getCreateDate "$tmp_target")
 
-  # eg Screenshot 2020-10-21 at 1.23.20 AM.png
-  elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ AM.* ]]
-  then
-    date="$(basename "$target" | cut -d " " -f 2)"
-    time="$(basename "$target" | cut -d " " -f 4)"
-    hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n<10) print 0; n" )"
-    min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
-    sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
-    setCreateDate "$tmp_target" "$date-$hour$min$sec"
-    created=$(getCreateDate "$tmp_target")
+    # eg Screenshot from 2020-08-26 14-03-02.png
+    elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ [[:digit:]]{2}-[[:digit:]]{2}-[[:digit:]]{2}.* ]]
+    then
+      setCreateDate "$tmp_target" "$(basename "$target" | cut -d " " -f 3-4 | sed 's/\..*//' | sed 's/-//g' | sed 's/ /-/')"
+      created=$(getCreateDate "$tmp_target")
 
-  # eg Screenshot 2020-10-21 at 1.23.20 PM.png
-  elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM.* ]]
-  then
-    date="$(basename "$target" | cut -d " " -f 2)"
-    time="$(basename "$target" | cut -d " " -f 4)"
-    hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); n+12" )"
-    min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
-    sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
-    setCreateDate "$tmp_target" "$date-$hour$min$sec"
-    created=$(getCreateDate "$tmp_target")
+    # eg Screenshot 2020-10-21 at 1.23.20 AM.png
+    elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ AM.* ]]
+    then
+      date="$(basename "$target" | cut -d " " -f 2)"
+      time="$(basename "$target" | cut -d " " -f 4)"
+      hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n<10) print 0; n" )"
+      min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
+      sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
+      setCreateDate "$tmp_target" "$date-$hour$min$sec"
+      created=$(getCreateDate "$tmp_target")
 
-  else
-    setCreateDate "$tmp_target" "00000000-000000"
-    created="00000000-000000" # TODO: check to see if the filename includes a date?
+    # eg Screenshot 2020-10-21 at 1.23.20 PM.png
+    elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM.* ]]
+    then
+      date="$(basename "$target" | cut -d " " -f 2)"
+      time="$(basename "$target" | cut -d " " -f 4)"
+      hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); n+12" )"
+      min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
+      sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
+      setCreateDate "$tmp_target" "$date-$hour$min$sec"
+      created=$(getCreateDate "$tmp_target")
+
+    else
+      setCreateDate "$tmp_target" "00000000-000000"
+      created="00000000-000000" # TODO: check to see if the filename includes a date?
+    fi
   fi
-
 fi
 
 ########################################
@@ -318,7 +321,7 @@ fi
 new_hash=$(sha256sum "$tmp_target" | cut -d " " -f 1)
 suffix=$(echo "$new_hash" | head -c 8)
 
-if [[ "$category" == "camera" || "$category" == "private" || "$category" == "screenshots" ]]
+if grep -w -q "$ext" <<<"${datename_types[*]}"
 then
   name="$created-$suffix.$ext"
   subpath="$category/$name"
