@@ -24,7 +24,6 @@ media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
 
 tmp="/tmp/media"
-rm -rf "$tmp"
 mkdir -p "$tmp"
 
 ####################
@@ -35,7 +34,7 @@ if [[ ! -f "$target" ]]
 then echo "$fail File does not exist at $target" && exit 1
 fi
 
-categories=(camera screenshots private)
+categories=(audio camera docs screenshots private)
 category="$2"
 if [[ -z "$category" ]]
 then
@@ -65,26 +64,71 @@ then remove="true"
 else remove="false"
 fi
 
-####################
-## Ensure target is valid & not a duplicate
-
-target_hash=$(sha256sum "$target" | cut -d " " -f 1)
-
 index=$media/index.sqlite
 if [[ ! -f "$index" ]]
 then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
 fi
 
+target_hash=$(sha256sum "$target" | cut -d " " -f 1)
+
+####################
+## helper functions
+
+function getCreateDate {
+  exiftool -CreateDate "$1" 2> /dev/null \
+    | sed 's/.*  ://' \
+    | sed 's/: /:0/g' \
+    | sed 's/://g' \
+    | sed 's/\+.*//g' \
+    | sed 's/ /-/g' \
+    | sed 's/-$//' \
+    | sed 's/^-//'
+}
+
+function setCreateDate {
+  t="$1"
+  d="$2"
+  date="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}"
+  if ! exiftool -ignoreMinorErrors -CreateDate="$date" "$t" > /dev/null
+  then
+    # Rewrite all valid exif metadata if some was corrupted (see https://exiftool.org/faq.html#Q20)
+    if ! exiftool -all= -tagsfromfile @ -all:all -unsafe -icc_profile -CreateDate="$date" "$t" > /dev/null
+    then echo "$fail Failed to set $t CreateDate to $d" && exit 1
+    fi
+  fi
+  created=$(getCreateDate "$t")
+  original="${t}_original"
+  if [[ "$original" != "$tmp/$(basename "${t}_original")" ]]
+  then mv -f "$original" "$tmp/$(basename "${t}_original")"
+  fi
+  echo "Updated exif data for $t w new create date: ${created}"
+}
+
 function getEntry {
-  sqlite3 "$index" "select path from media where hash = '$target_hash';"
+  set +e
+  if ! sqlite3 "$index" "select path from media where hash = '$target_hash';"
+  then echo "$fail Failed to get index entry for $target (hash=$target_hash)" && exit 1
+  fi
+  set -e
 }
 
 function setEntry {
-  sqlite3 "$index" "insert into media values('$target_hash','$1');"
+  set +e
+  if ! sqlite3 "$index" "insert into media values('$target_hash','$1');"
+  then
+    if ! sqlite3 "$index" "update media set path = '$1' where hash = '$target_hash';"
+    then echo "$fail Failed to set new index entry for $target (path=$1)" && exit 1
+    else echo "Updated entry for $target_hash to $1"
+    fi
+  fi
+  set -e
 }
 
+####################
+## Ensure target is valid & not a duplicate
+
 entry=$(getEntry "$target_hash")
-if [[ -n "$entry" ]]
+if [[ -n "$entry" && -f "$media/$entry" ]]
 then
   echo "$good File has already been imported & is available at $entry"
   if [[ "$dryrun" == "false" && "$remove" == "true" ]]
@@ -112,57 +156,97 @@ ext=$(exiftool -FileTypeExtension "$target" 2> /dev/null | sed 's/^.*: //')
 if [[ \
   "$ext" != "3gp" &&\
   "$ext" != "avi" &&\
+  "$ext" != "doc" &&\
+  "$ext" != "docx" &&\
   "$ext" != "gif" &&\
   "$ext" != "heic" &&\
+  "$ext" != "html" &&\
   "$ext" != "jpg" &&\
   "$ext" != "m4v" &&\
   "$ext" != "mov" &&\
+  "$ext" != "mp3" &&\
   "$ext" != "mp4" &&\
+  "$ext" != "odt" &&\
   "$ext" != "pdf" &&\
-  "$ext" != "png" \
+  "$ext" != "png" &&\
+  "$ext" != "wmv" \
   ]]
 then echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
 fi
 
-exiftool "$target" > /dev/null
-res=$?
-if [[ "$res" != "0" ]]
+if ! exiftool "$target" > /dev/null
 then echo "Invalid exif data for $target" && exit 1
 fi
 
-####################
-## set create date
+########################################
+## Conversions: heic=>jpg, avi,m4v,mov=>mp4
 
 tmp_target="$tmp/$(basename "$target")"
 rm -rf "$tmp_target*"
 cp "$target" "$tmp_target"
 chmod 644 "$tmp_target"
 
-function getCreateDate {
-  exiftool -CreateDate "$1" 2> /dev/null \
-    | sed 's/.*  ://' \
-    | sed 's/: /:0/g' \
-    | sed 's/://g' \
-    | sed 's/\+.*//g' \
-    | sed 's/ /-/g' \
-    | sed 's/-$//' \
-    | sed 's/^-//'
-}
-
-function setCreateDate {
-  t="$1"
-  d="$2"
-  exiftool -ignoreMinorErrors -CreateDate="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}" "$t" > /dev/null
-  created=$(getCreateDate "$t")
-  original="${t}_original"
-  if [[ "$original" != "$tmp/$(basename "${t}_original")" ]]
-  then mv -f "$original" "$tmp/$(basename "${t}_original")"
+# Convert heic files into jpg
+if [[ "$ext" == "heic" ]]
+then
+  if [[ -z "$(command -v heif-convert)" ]]
+  then echo "$fail Install heif-convert first" && exit 1
   fi
-  echo "Updated exif data for $t w new create date: ${created}"
-}
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.jpg/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
+  fi
+  echo "Converting heic-formatted $target into an jpg at $new_target"
+  heif-convert -q95 "$target" "$new_target" > /dev/null
+  tmp_target="$new_target"
+  ext="jpg"
+fi
+
+# Convert video files into mp4
+# Do we need to rm data streams? https://github.com/aminyazdanpanah/PHP-FFmpeg-video-streaming/issues/74
+if [[ "$ext" == "3gp" || "$ext" == "avi" || "$ext" == "m4v" || "$ext" == "mov" || "$ext" == "wmv" ]]
+then
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
+  fi
+  echo "Converting $ext-formatted $target into an mp4 at $new_target"
+  ffmpeg -i "$target" -loglevel error -crf 18 -f mp4 "$new_target"
+  tmp_target="$new_target"
+  ext="mp4"
+fi
+
+# Convert audio files into mp3
+if [[ "$ext" == "m4a" || "$ext" == "aax" ]]
+then
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp3/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
+  fi
+  echo "Converting $ext-formatted $target into an mp3 at $new_target"
+  ffmpeg -i "$target" -loglevel error -crf 18 -f mp3 "$new_target"
+  tmp_target="$new_target"
+  ext="mp3"
+fi
+
+# Convert doc files into pdf
+if [[ "$ext" == "doc" || "$ext" == "docx" || "$ext" == "html" || "$ext" == "odt" ]]
+then
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.pdf/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
+  fi
+  echo "Converting $ext-formatted $target into an pdf at $new_target"
+  doc2pdf -o "$new_target" "$target"
+  tmp_target="$new_target"
+  ext="pdf"
+fi
+
+####################
+## set create date
 
 created=$(getCreateDate "$target")
-if [[ -z "$created" ]]
+if [[ -z "$created" && "$ext" != "mp3" ]]
 then
 
   if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
@@ -196,49 +280,22 @@ then
 fi
 
 ########################################
-## Conversions: heic=>jpg, avi,m4v,mov=>mp4
-
-# Convert heic files into jpg
-if [[ "$ext" == "heic" ]]
-then
-  if [[ -z "$(command -v heif-convert)" ]]
-  then echo "$fail Install heif-convert first" && exit 1
-  fi
-  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.jpg/')"
-  if [[ -f "$new_target" ]]
-  then rm -f "$new_target"
-  fi
-  echo "Converting heic-formatted $target into an jpg at $new_target"
-  heif-convert -q95 "$target" "$new_target" > /dev/null
-  setCreateDate "$new_target" "$created"
-  tmp_target="$new_target"
-  ext="jpg"
-fi
-
-# Convert video files into mp4
-# Do we need to rm data streams? https://github.com/aminyazdanpanah/PHP-FFmpeg-video-streaming/issues/74
-if [[ "$ext" == "3gp" || "$ext" == "avi" || "$ext" == "m4a" || "$ext" == "mov" ]]
-then
-  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.mp4/')"
-  if [[ -f "$new_target" ]]
-  then rm -f "$new_target"
-  fi
-  echo "Converting $ext-formatted $target into an mp4 at $new_target"
-  ffmpeg -i "$target" -loglevel error -crf 18 -f mp4 "$new_target"
-  setCreateDate "$new_target" "$created"
-  tmp_target="$new_target"
-  ext="mp4"
-fi
-
-########################################
 ## Import
 
 new_hash=$(sha256sum "$tmp_target" | cut -d " " -f 1)
 suffix=$(echo "$new_hash" | head -c 8)
 
-name="$created-$suffix.$ext"
-subpath="$category/$name"
-path="$media/$subpath"
+if [[ "$category" == "camera" || "$category" == "private" || "$category" == "screenshots" ]]
+then
+  name="$created-$suffix.$ext"
+  subpath="$category/$name"
+  path="$media/$subpath"
+else
+  name="$(basename "$tmp_target" "$ext" | tr -d "'" | tr ' _–,.()&' '-' | sed 's/-\+/-/g' | sed 's/-$//')-$suffix.$ext"
+  subpath="$category/$name"
+  path="$media/$subpath"
+fi
+
 if [[ ! -d "$(dirname "$path")" ]]
 then mkdir -p "$(dirname "$path")"
 fi
@@ -260,6 +317,7 @@ then
     then rm -f "$target" && echo "$warn Removed $target"
     fi
   fi
+  rm "$tmp_target"
   exit
 fi
 
@@ -269,8 +327,8 @@ then echo "$good Import $target to $subpath"
 elif [[ "$dryrun" == "false" ]]
 then
   cp -i "$tmp_target" "$path"
-  echo "$good Imported $target to $subpath"
   setEntry "$subpath"
+  echo "$good Imported $target to $subpath"
   if [[ "$remove" == "true" ]]
   then
     dup_suffix=$(sha256sum "$path" | cut -d " " -f 1 | head -c 8)
@@ -279,4 +337,5 @@ then
     else echo "$fail Invalid file exists at $path (expected suffix of $dup_suffix)" && exit 1
     fi
   fi
+  rm "$tmp_target"*
 fi
