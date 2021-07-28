@@ -172,6 +172,7 @@ if [[ \
 then
   category=${given_category:-camera};
 elif [[ \
+  "$ext" == "jp2" ||\
   "$ext" == "png" \
   ]]
 then
@@ -190,7 +191,8 @@ elif [[ \
   "$ext" == "html" ||\
   "$ext" == "json" ||\
   "$ext" == "odt" ||\
-  "$ext" == "pdf" \
+  "$ext" == "pdf" ||\
+  "$ext" == "rtf" \
   ]]
 then
   category=${given_category:-docs};
@@ -231,6 +233,22 @@ then
   ext="jpg"
 fi
 
+# Convert jp2 files into png
+if [[ "$ext" == "jp2" ]]
+then
+  if [[ -z "$(command -v opj_decompress)" ]]
+  then echo "$fail Install opj_decompress first" && exit 1
+  fi
+  new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.png/')"
+  if [[ -f "$new_target" ]]
+  then rm -f "$new_target"
+  fi
+  echo "Converting jp2-formatted $target into a png at $new_target"
+  opj_decompress -i "$target" -OutFor png -o "$new_target" > /dev/null 2>&1
+  tmp_target="$new_target"
+  ext="png"
+fi
+
 # Convert video files into mp4
 # Do we need to rm data streams? https://github.com/aminyazdanpanah/PHP-FFmpeg-video-streaming/issues/74
 if [[ "$ext" == "3gp" || "$ext" == "avi" || "$ext" == "m4v" || "$ext" == "mov" || "$ext" == "wmv" ]]
@@ -259,7 +277,7 @@ then
 fi
 
 # Convert doc files into pdf
-if [[ "$ext" == "doc" || "$ext" == "docx" || "$ext" == "html" || "$ext" == "odt" ]]
+if [[ "$ext" == "doc" || "$ext" == "docx" || "$ext" == "html" || "$ext" == "odt" || "$ext" == "rtf" ]]
 then
   new_target="$tmp/$(basename "$target" | sed 's/\.'"$dotype"'/\.pdf/')"
   if [[ -f "$new_target" ]]
@@ -304,21 +322,41 @@ then
       created=$(getCreateDate "$tmp_target")
 
     # eg "Screenshot 2020-10-21 at 1.23.20 AM.png"
-    elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ AM.* ]]
+    elif [[ "$target" =~ Screenshot\ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ AM.* ]]
     then
-      date="$(basename "$target" | cut -d " " -f 2)"
+      date="$(basename "$target" | cut -d " " -f 2 | tr -d '-')"
       time="$(basename "$target" | cut -d " " -f 4)"
       hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n==12) print 0; if (n==12) 0 else n" )"
       min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
       sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
       setCreateDate "$tmp_target" "$date-$hour$min$sec"
       created=$(getCreateDate "$tmp_target")
-
     # eg "Screenshot 2020-10-21 at 1.23.20 PM.png"
-    elif [[ "$target" =~ \ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM.* ]]
+    elif [[ "$target" =~ Screenshot\ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM.* ]]
     then
-      date="$(basename "$target" | cut -d " " -f 2)"
+      date="$(basename "$target" | cut -d " " -f 2 | tr -d '-')"
       time="$(basename "$target" | cut -d " " -f 4)"
+      hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n==12) n else n+12" )"
+      min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
+      sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
+      setCreateDate "$tmp_target" "$date-$hour$min$sec"
+      created=$(getCreateDate "$tmp_target")
+
+    # eg "Screen Shot 2017-04-27 at 5.15.59 PM.png"
+    elif [[ "$target" =~ Screen\ Shot\ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ AM.* ]]
+    then
+      date="$(basename "$target" | cut -d " " -f 3 | tr -d '-')"
+      time="$(basename "$target" | cut -d " " -f 5)"
+      hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n==12) print 0; if (n==12) 0 else n" )"
+      min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
+      sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
+      setCreateDate "$tmp_target" "$date-$hour$min$sec"
+      created=$(getCreateDate "$tmp_target")
+    # eg "Screen Shot 2017-04-27 at 5.15.59 PM.png"
+    elif [[ "$target" =~ Screen\ Shot\ [[:digit:]]{4}-[[:digit:]]{2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM.* ]]
+    then
+      date="$(basename "$target" | cut -d " " -f 3 | tr -d '-')"
+      time="$(basename "$target" | cut -d " " -f 5)"
       hour="$(bc <<<"n=$(echo "$time" | cut -d "." -f 1); if (n==12) n else n+12" )"
       min="$(bc <<<"n=$(echo "$time" | cut -d "." -f 2); if (n<10) print 0; n" )"
       sec="$(bc <<<"n=$(echo "$time" | cut -d "." -f 3); if (n<10) print 0; n" )"
@@ -340,7 +378,6 @@ then
       echo "hour=$hour"
       setCreateDate "$tmp_target" "$year$month$day-$hour$min$sec"
       created=$(getCreateDate "$tmp_target")
-
     # eg "Photo on 2-19-17 at 12.35 PM #2 (original).jpg"
     elif [[ "$target" =~ \ [[:digit:]]{1,2}-[[:digit:]]{1,2}-[[:digit:]]{2}\ at\ [[:digit:]]{1,2}\.[[:digit:]]{1,2}\ PM ]]
     then
