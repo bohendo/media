@@ -6,7 +6,6 @@ warn="⚠️ "
 fail="❌"
 
 categories=(audio camera docs downloads screenshots private)
-datename_types=(gif jpg mp4 png) # these file types are named yyyymmdd-hhmmss-<hash>.ext by default
 datename_categories=(camera screenshots private) # these categories are named yyyymmdd-hhmmss-<hash>.ext by default
 
 ####################
@@ -195,7 +194,7 @@ if ! exiftool "$target" > /dev/null
 then echo "Invalid exif data for $target" && exit 1
 fi
 
-if grep -w -q "$ext" <<<"${datename_types[*]}" && grep -w -q "$category" <<<"${datename_categories[*]}"
+if grep -w -q "$category" <<<"${datename_categories[*]}"
 then datename="true"
 else datename="false"
 fi
