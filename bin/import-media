@@ -38,7 +38,9 @@ then echo "$fail File does not exist at $target" && exit 1
 fi
 
 given_category="$2"
-if [[ -n "$given_category" && "$given_category" != -* ]] && ! grep -w -q "$given_category" <<<"${categories[*]}"
+if [[ "$given_category" == -* ]]
+then given_category=""
+elif [[ -n "$given_category" ]] && ! grep -w -q "$given_category" <<<"${categories[*]}"
 then
   echo "Category $given_category is invalid"
   echo "Valid categories: ${categories[*]}"
@@ -124,7 +126,7 @@ function setEntry {
 entry=$(getEntry "$target_hash")
 if [[ -n "$entry" && -f "$media/$entry" ]]
 then
-  echo "$good File has already been imported & is available at $entry"
+  echo "$good File $target has already been imported & is available at $entry"
   if [[ "$dryrun" == "false" && "$remove" == "true" ]]
   then
     dup_suffix=$(sha256sum "$media/$entry" | cut -d " " -f 1 | head -c 8)
@@ -167,6 +169,7 @@ then
   category=${given_category:-screenshots};
 elif [[ \
   "$ext" == "aax" ||\
+  "$ext" == "m4a" ||\
   "$ext" == "mp3" \
   ]]
 then
@@ -183,7 +186,7 @@ elif [[ \
 then
   category=${given_category:-docs};
 else
-  echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" || exit 1
+  echo "$fail Skipping file with unsupported FileTypeExtension $ext: $target" && exit 1
 fi
 
 if ! exiftool "$target" > /dev/null
