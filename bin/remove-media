@@ -6,9 +6,9 @@ good="✅"
 media=${MEDIA_DIR:-$HOME/Media} 
 mkdir -p "$media"
 
-index=$media/.index
+index=$media/index.sqlite
 if [[ ! -f "$index" ]]
-then touch "$index"
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
 fi
 
 target=$(basename "$1")
