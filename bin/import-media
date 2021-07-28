@@ -5,8 +5,9 @@ good="✅"
 warn="⚠️ "
 fail="❌"
 
-categories=(audio camera docs screenshots private)
-datename_types=(gif jpg mp4 png) # these file types are named yyyymmdd-hhmmss-<hash>.ext
+categories=(audio camera docs downloads screenshots private)
+datename_types=(gif jpg mp4 png) # these file types are named yyyymmdd-hhmmss-<hash>.ext by default
+datename_categories=(camera screenshots private) # these categories are named yyyymmdd-hhmmss-<hash>.ext by default
 
 ####################
 ## assert & setup env
@@ -84,6 +85,7 @@ function setCreateDate {
   t="$1"
   d="$2"
   date="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}"
+  #echo "Setting create date for file '$t' to '$date'"
   if ! exiftool -ignoreMinorErrors -CreateDate="$date" "$t" > /dev/null
   then
     echo "Attmpting to repair broken exif data..."
@@ -193,6 +195,11 @@ if ! exiftool "$target" > /dev/null
 then echo "Invalid exif data for $target" && exit 1
 fi
 
+if grep -w -q "$ext" <<<"${datename_types[*]}" && grep -w -q "$category" <<<"${datename_categories[*]}"
+then datename="true"
+else datename="false"
+fi
+
 ########################################
 ## Conversions: heic=>jpg, avi,m4v,mov=>mp4
 
@@ -260,7 +267,7 @@ fi
 ####################
 ## set create date
 
-if grep -w -q "$ext" <<<"${datename_types[*]}"
+if [[ "$datename" == "true" ]]
 then
   created=$(getCreateDate "$target")
   if [[ -z "$created" || "$created" == "00000000-000000" ]]
@@ -324,7 +331,7 @@ fi
 new_hash=$(sha256sum "$tmp_target" | cut -d " " -f 1)
 suffix=$(echo "$new_hash" | head -c 8)
 
-if grep -w -q "$ext" <<<"${datename_types[*]}"
+if [[ "$datename" == "true" ]]
 then
   name="$created-$suffix.$ext"
   subpath="$category/$name"
