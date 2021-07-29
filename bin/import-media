@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+########################################
+## Define Constants
+
 good="✅"
 warn="⚠️ "
 fail="❌"
@@ -8,8 +11,10 @@ fail="❌"
 categories=(audio camera docs downloads screenshots private)
 datename_categories=(camera screenshots private) # these categories are named yyyymmdd-hhmmss-<hash>.ext by default
 
-####################
-## assert & setup env
+date_zero="00000000-000000"
+
+########################################
+## Make sure required bins & files & dirs exist
 
 if [[ -z "$(command -v exiftool)" ]]
 then echo "$fail Install exiftool first" && exit 1
@@ -29,8 +34,8 @@ mkdir -p "$media"
 tmp="/tmp/media"
 mkdir -p "$tmp"
 
-####################
-## parse args
+########################################
+## Parse Args
 
 target="$1"
 if [[ ! -f "$target" ]]
@@ -68,11 +73,11 @@ fi
 
 target_hash=$(sha256sum -- "$target" | cut -d " " -f 1)
 
-####################
-## helper functions
+########################################
+## Helper Functions
 
 function getCreateDate {
-  function cleanDate {
+  function fmtDate {
     sed 's/.*  ://' \
       | sed 's/: /:0/g' \
       | sed 's/://g' \
@@ -81,10 +86,15 @@ function getCreateDate {
       | sed 's/-$//' \
       | sed 's/^-//'
   }
-  res=$(exiftool -CreateDate -- "$1" | cleanDate)
-  if [[ -n "$res" ]]
-  then echo "$res"
-  else exiftool -DateCreated -- "$1" | cleanDate
+  created=$(exiftool -CreateDate -- "$1" | fmtDate)
+  if [[ -n "$created" && "$created" != "$date_zero" ]]
+  then echo "$created"
+  else
+    created=$(exiftool -DateCreated -- "$1" | fmtDate)
+    if [[ -n "$created" && "$created" != "$date_zero" ]]
+    then echo "$created"
+    else echo "$date_zero"
+    fi
   fi
 }
 
@@ -129,7 +139,7 @@ function setEntry {
   set -e
 }
 
-####################
+########################################
 ## Ensure target is valid & not a duplicate
 
 entry=$(getEntry "$target_hash")
@@ -210,7 +220,7 @@ else datename="false"
 fi
 
 ########################################
-## Conversions: heic=>jpg, avi,m4v,mov=>mp4
+## Convert Media to Common Formats
 
 tmp_target="$tmp/$(basename "$target")"
 rm -rf "$tmp_target*"
@@ -289,13 +299,13 @@ then
   ext="pdf"
 fi
 
-####################
-## set create date
+########################################
+## Set Create Date
 
 if [[ "$datename" == "true" ]]
 then
   created=$(getCreateDate "$target")
-  if [[ -z "$created" || "$created" == "00000000-000000" ]]
+  if [[ -z "$created" || "$created" == "$date_zero" ]]
   then
 
     if [[ "$target" =~ (IMG|DOC|VID)-[[:digit:]]{8}-WA[[:digit:]]{4,}.* ]]
@@ -393,8 +403,8 @@ then
       created=$(getCreateDate "$tmp_target")
 
     else
-      setCreateDate "$tmp_target" "00000000-000000"
-      created="00000000-000000" # TODO: check to see if the filename includes a date?
+      setCreateDate "$tmp_target" "$date_zero"
+      created="$date_zero" # TODO: check to see if the filename includes a date?
     fi
   fi
 fi

@@ -1,59 +1,113 @@
 #!/bin/bash
 
-fail="❌"
-warn="⚠️ "
+########################################
+## Define Constants
+
 good="✅"
+warn="⚠️ "
+fail="❌"
+
+categories=(audio camera docs downloads screenshots private)
+datename_categories=(camera screenshots private)
+
+date_zero="00000000-000000"
+
+########################################
+## Make sure required bins & files & dirs exist
 
 if [[ -z "$(command -v exiftool)" ]]
 then echo "$fail Install exiftool first" && exit 1
 fi
 
+if [[ -z "$(command -v sqlite3)" ]]
+then echo "$fail Install sqlite3 first" && exit 1
+fi
+
+media=${MEDIA_DIR:-$HOME/Media}
+mkdir -p "$media"
+
+########################################
+## Helper Functions
+
 function getCreateDate {
-  exiftool -CreateDate "$1" 2> /dev/null \
-    | sed 's/.*  ://' \
-    | sed 's/: /:0/g' \
-    | sed 's/://g' \
-    | sed 's/\+.*//g' \
-    | sed 's/ /-/g' \
-    | sed 's/-$//' \
-    | sed 's/^-//'
+  function fmtDate {
+    sed 's/.*  ://' \
+      | sed 's/: /:0/g' \
+      | sed 's/://g' \
+      | sed 's/\+.*//g' \
+      | sed 's/ /-/g' \
+      | sed 's/-$//' \
+      | sed 's/^-//'
+  }
+  created=$(exiftool -CreateDate -- "$1" | fmtDate)
+  if [[ -n "$created" && "$created" != "$date_zero" ]]
+  then echo "$created"
+  else
+    created=$(exiftool -DateCreated -- "$1" | fmtDate)
+    if [[ -n "$created" && "$created" != "$date_zero" ]]
+    then echo "$created"
+    else echo "$date_zero"
+    fi
+  fi
 }
 
-for target in media/camera/*
+########################################
+## Gather list of files
+
+index="$media/index.sqlite"
+if [[ ! -f "$index" ]]
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+fi
+
+if ! all_files=$(sqlite3 "$index" "select path from media;")
+then echo "$fail Failed to select file paths from $index" && exit 1
+fi
+
+echo "Verifying $(echo "$all_files" | wc -l) media files"
+for file in $all_files
 do
 
-  if [[ ! -f "$target" ]]
-  then echo "$fail File does not exist at $target" && exit 1
+  hasErr="false"
+
+  ########################################
+  ## Check Path
+
+  full_path="$media/$file"
+  if [[ ! -f "$full_path" ]]
+  then echo "$fail No file exists at path $full_path" && continue
   fi
 
-  created=$(getCreateDate "$target")
+  ########################################
+  ## Check Category
 
-  if [[ -z "$created" ]]
+  category="${file%/*}"
+  if ! grep -w -q "$category" <<<"${categories[*]}"
+  then echo "$warn Invalid category for $file" && hasErr="true"
+  fi
+
+  ########################################
+  ## Check Hash
+
+  checksum=$(sha256sum -- "$full_path" | cut -d " " -f 1)
+  noext=${file%.*}
+  suffix=${noext##*-}
+  if [[ "$checksum" != "$suffix"* ]]
+  then echo "$warn Invalid checksum for $file (sha256=$checksum)" && hasErr="true"
+  fi
+
+  ########################################
+  ## Check Create Date
+
+  if grep -w -q "$category" <<<"${datename_categories[*]}"
   then
-    echo "$fail $target does not have a create date"
-
-    if [[ "$(basename "$target")" == "00000000-000000"* ]]
-    then
-      echo "$warn re-importing $target"
-      import-media "$target" -y
-      bash ops/remove.sh "$target"
-      continue;
+    created=$(getCreateDate "$full_path")
+    if [[ "${file##*/}" != "$created"* ]]
+    then echo "$warn Invalid create date for $file (CreateDate=$created)" && hasErr="true"
     fi
-
-    echo "Idk what to do with this"
-    exit 1
   fi
 
-  if [[ "$(basename "$target")" != "$created"* ]]
-  then echo "$fail $target does not match create date $created" && exit 1
+  if [[ "$hasErr" == "false" ]]
+  then echo "$good Validated $file"
   fi
 
-  full_digest=$(sha256sum "$target" | cut -d " " -f 1)
-  digest=$(echo "$full_digest" | head -c 8)
-
-  if [[ "$(basename "$target")" != "$created-$digest."* ]]
-  then echo "$fail $target does not match digest $digest" && exit 1
-  fi
-
-  echo "$good $target looks good"
 done
