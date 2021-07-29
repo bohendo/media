@@ -163,7 +163,7 @@ else
   )
   echo "Found $(echo "$fs_paths" | wc -l) media files on the filesystem"
 
-  all_paths=$(echo -en "$index_paths\n$fs_paths" | sort | uniq | sed '/camera\/20110729-102048-cc414e39.jpg/,$!d')
+  all_paths=$(echo -en "$index_paths\n$fs_paths" | sort | uniq)
   echo "Validating $(echo "$all_paths" | wc -l) unique media files"
   for file in $all_paths
   do verifyMedia "$file"
