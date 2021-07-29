@@ -61,7 +61,7 @@ then remove="true"
 else remove="false"
 fi
 
-index=$media/index.sqlite
+index="$media/index.sqlite"
 if [[ ! -f "$index" ]]
 then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
 fi

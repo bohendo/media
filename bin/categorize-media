@@ -1,0 +1,93 @@
+#!/bin/bash
+
+good="✅"
+warn="⚠️ "
+fail="❌"
+
+categories=(audio camera docs downloads screenshots private)
+
+########################################
+## Make sure required bins & dirs exist
+
+if [[ -z "$(command -v exiftool)" ]]
+then echo "$fail Install exiftool first" && exit 1
+fi
+
+if [[ -z "$(command -v sqlite3)" ]]
+then echo "$fail Install sqlite3 first" && exit 1
+fi
+
+media=${MEDIA_DIR:-$HOME/Media}
+mkdir -p "$media"
+
+########################################
+## Parse Args
+
+path="$1"
+fullpath="$media/$path"
+if [[ ! -f "$fullpath" ]]
+then echo "$fail File does not exist at $fullpath" && exit 1
+fi
+
+new_category="$2"
+if [[ -z "$new_category" ]]
+then
+  echo "Provide a category as the 2nd arg"
+  echo "Valid categories: ${categories[*]}"
+  exit 1;
+elif [[ -n "$new_category" ]] && ! grep -w -q "$new_category" <<<"${categories[*]}"
+then
+  echo "Category $new_category is invalid"
+  echo "Valid categories: ${categories[*]}"
+  exit 1;
+fi
+
+if [[ "$3" == "--dry-run" ]]
+then dryrun="true"
+else dryrun="false"
+fi
+
+########################################
+## Define & Verify New Path
+
+new_path="$new_category/${path#*/}"
+new_fullpath="$media/$new_path"
+if [[ -f "$new_fullpath" ]]
+then echo "$warn File already exists at $new_fullpath"
+fi
+
+if [[ "$new_path" == "$path" ]]
+then echo "$warn File at $path is already in category $new_category" && exit 1
+fi
+
+########################################
+## Update Index
+
+index="$media/index.sqlite"
+if [[ ! -f "$index" ]]
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+fi
+
+update_query="update media set path = '$new_path' where path = '$path';"
+if [[ "$dryrun" == "true" ]]
+then echo "Execute SQLite query: $update_query"
+else
+  echo "Executing SQLite query: $update_query"
+  if ! sqlite3 "$index" "$update_query"
+  then echo "$fail Failed to update index entry for $path" && exit 1
+  fi
+fi
+
+########################################
+## Move File
+
+if [[ "$dryrun" == "true" ]]
+then echo "Move $path to $new_path"
+else
+  if [[ ! -d "$(dirname "$new_fullpath")" ]]
+  then mkdir -p "$(dirname "$new_fullpath")"
+  fi
+  mv -v "$fullpath" "$new_fullpath"
+  echo "$good Successfully recategorized ${path#*/} as $new_category";
+fi
+
