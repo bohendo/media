@@ -107,6 +107,16 @@ function setCreateDate {
   echo "Updated exif data for $t w new create date: ${created}"
 }
 
+function validateDate {
+  d="$1"
+  if [[ "$d" == "$date_zero" ]]
+  then echo "false"
+  elif ! [[ "$d" =~ ^[0-9]{8}-[0-9]{6}$ ]]
+  then echo "false"
+  else echo "true"
+  fi
+}
+
 function validateMedia {
   new_fullpath="$1"
   # Validate new file before removing old one
@@ -131,11 +141,11 @@ echo "exif_date=$exif_date | name_date=$name_date"
 
 if [[ -z "$new_date" ]]
 then
-  if [[ "$name_date" == "$date_zero" && "$exif_date" != "$date_zero" ]]
+  if [[ "$(validateDate "$name_date")" != "true" && "$(validateDate "$exif_date")" == "true" ]]
   then
     new_date="$exif_date"
     echo "Setting new date to value from exifdata: $exif_date"
-  elif [[ "$name_date" != "$date_zero" && "$exif_date" == "$date_zero" ]]
+  elif [[ "$(validateDate "$name_date")" == "true" && "$(validateDate "$exif_date")" != "true" ]]
   then
     new_date="$name_date"
     echo "Setting new date to value from filename: $name_date"
