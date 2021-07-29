@@ -1,34 +1,60 @@
 #!/bin/bash
 
+########################################
+## Define Constants
+
 fail="❌"
 good="✅"
 
+########################################
+## Make sure required bins & files & dirs exist
+
+if [[ -z "$(command -v sqlite3)" ]]
+then echo "$fail Install sqlite3 first" && exit 1
+fi
+
 media=${MEDIA_DIR:-$HOME/Media} 
 mkdir -p "$media"
+
+########################################
+## Parse Args
+
+path="$1"
+fullpath="$media/$path"
+if [[ ! -f "$fullpath" ]]
+then echo "$fail File does not exist at $fullpath" && exit 1
+fi
+
+if [[ "$2" == "--dry-run" ]]
+then dryrun="true"
+else dryrun="false"
+fi
+
+########################################
+## Update Index
 
 index=$media/index.sqlite
 if [[ ! -f "$index" ]]
 then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
 fi
 
-target=$(basename "$1")
-
-entry=$(grep -m 1 "$target$" "$index" || true)
-
-path="${entry#*:}"
-if ! [[ -f "$path" ]]
-then echo "$fail Can't find a target at $path" && exit 1
-fi
-
-if [[ -n "$entry" && "$entry" == *:* ]]
-then
-  mv "$index" "$index.backup"
-  sed "s/$entry/${entry%:*}:/" < "$index.backup" > "$index"
-  rm "$index.backup"
+delete_query="update media set path = NULL where path = '$path';"
+if [[ "$dryrun" == "true" ]]
+then echo "Execute SQLite query: $delete_query"
 else
-  echo "$fail File is not in the index: $target" && exit 1
+  echo "Executing SQLite query: $delete_query"
+  if ! sqlite3 "$index" "$delete_query"
+  then echo "$fail Failed to update index entry for $path" && exit 1
+  fi
 fi
 
-rm -f "$path"
-find "$media/albums" -name "$target" -exec rm -f {} \;
-echo "$good Removed $path"
+########################################
+## Remove File?
+
+if [[ "$dryrun" == "true" ]]
+then echo "Remove $path"
+else
+  rm "$fullpath"
+  find "$media/albums" -name "$(basename "$path")" -exec rm {} \;
+  echo "$good Removed $path"
+fi

@@ -27,6 +27,15 @@ media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
 
 ########################################
+## Parse Args
+
+path="$1"
+fullpath="$media/$path"
+if [[ -n "$path" && ! -f "$fullpath" ]]
+then echo "$fail File does not exist at $fullpath" && exit 1
+fi
+
+########################################
 ## Helper Functions
 
 function getCreateDate {
@@ -52,21 +61,11 @@ function getCreateDate {
 }
 
 ########################################
-## Gather list of files
+## Verify Media
 
-index="$media/index.sqlite"
-if [[ ! -f "$index" ]]
-then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
-fi
+function verifyMedia {
 
-if ! all_files=$(sqlite3 "$index" "select path from media;")
-then echo "$fail Failed to select file paths from $index" && exit 1
-fi
-
-echo "Verifying $(echo "$all_files" | wc -l) media files"
-for file in $all_files
-do
-
+  file="$1"
   hasErr="false"
 
   ########################################
@@ -74,7 +73,7 @@ do
 
   fullpath="$media/$file"
   if [[ ! -f "$fullpath" ]]
-  then echo "$fail No file exists at path $fullpath" && continue
+  then echo "$fail No file exists at path $fullpath" && return
   fi
 
   ########################################
@@ -110,4 +109,30 @@ do
   then echo "$good Validated $file"
   fi
 
-done
+}
+
+########################################
+## Verify Provided File
+
+if [[ -n "$path" ]]
+then verifyMedia "$path"
+else
+
+  ########################################
+  ## Or Verify All Files
+
+  index="$media/index.sqlite"
+  if [[ ! -f "$index" ]]
+  then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+  fi
+
+  if ! all_files=$(sqlite3 "$index" "select path from media;")
+  then echo "$fail Failed to select file paths from $index" && exit 1
+  fi
+
+  echo "Verifying $(echo "$all_files" | wc -l) media files"
+  for file in $all_files
+  do verifyMedia "$file"
+  done
+
+fi
