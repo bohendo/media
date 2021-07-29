@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 ########################################
 ## Define Constants
@@ -165,7 +166,8 @@ else
   if [[ ! -d "$(dirname "$new_fullpath")" ]]
   then mkdir -p "$(dirname "$new_fullpath")"
   fi
-  mv -v "$tmp_path" "$new_fullpath"
+  mv "$tmp_path" "$new_fullpath"
+  echo "Moved $tmp_path to $new_path"
 
   # Validate new file before removing old one
   checksum=$(sha256sum -- "$new_fullpath" | cut -d " " -f 1)

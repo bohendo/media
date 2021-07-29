@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 ########################################
 ## Define Constants
@@ -27,6 +28,11 @@ fi
 
 media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
+
+index="$media/index.sqlite"
+if [[ ! -f "$index" ]]
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+fi
 
 ########################################
 ## Parse Args
@@ -86,9 +92,19 @@ function verifyMedia {
   fi
 
   ########################################
+  ## Check Index
+
+  if ! inputs=$(sqlite3 "$index" "select hash from media where path = '$file';" | sort)
+  then echo "$fail Failed to select file paths from $index" && exit 1
+  fi
+  if [[ -z "$inputs" ]]
+  then echo "$fail File at $file is not in the index" && hasErr="true"
+  fi
+
+  ########################################
   ## Check Category
 
-  category="${file%/*}"
+  category="${file%%/*}"
   if ! grep -w -q "$category" <<<"${categories[*]}"
   then echo "$warn Invalid category for $file" && hasErr="true"
   fi
@@ -135,17 +151,21 @@ else
   ########################################
   ## Or Verify All Files
 
-  index="$media/index.sqlite"
-  if [[ ! -f "$index" ]]
-  then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
-  fi
-
-  if ! all_files=$(sqlite3 "$index" "select path from media;" | sort)
+  if ! index_paths=$(sqlite3 "$index" "select path from media;" | sort)
   then echo "$fail Failed to select file paths from $index" && exit 1
   fi
+  echo "Found $(echo "$index_paths" | wc -l) media files in the index"
 
-  echo "Verifying $(echo "$all_files" | wc -l) media files"
-  for file in $all_files
+  fs_paths=$(
+    for category in "${categories[@]}";
+    do find "$media/$category" -maxdepth 1 -type f;
+    done | sed "s|$media/||"
+  )
+  echo "Found $(echo "$fs_paths" | wc -l) media files on the filesystem"
+
+  all_paths=$(echo -en "$index_paths\n$fs_paths" | sort | uniq)
+  echo "Validating $(echo "$all_paths" | wc -l) unique media files"
+  for file in $all_paths
   do verifyMedia "$file"
   done
 
