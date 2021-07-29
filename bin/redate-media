@@ -1,7 +1,26 @@
 #!/bin/bash
 
-fail="❌"
+########################################
+## Define Constants
+
 good="✅"
+warn="⚠️ "
+fail="❌"
+
+datename_categories=(camera screenshots private)
+
+date_zero="00000000-000000"
+
+########################################
+## Make sure required bins & files & dirs exist
+
+if [[ -z "$(command -v exiftool)" ]]
+then echo "$fail Install exiftool first" && exit 1
+fi
+
+if [[ -z "$(command -v sqlite3)" ]]
+then echo "$fail Install sqlite3 first" && exit 1
+fi
 
 media=${MEDIA_DIR:-$HOME/Media}
 mkdir -p "$media"
@@ -9,58 +28,158 @@ mkdir -p "$media"
 tmp="/tmp/media"
 mkdir -p "$tmp"
 
-index=$media/.index
-if [[ ! -f "$index" ]]
-then touch "$index"
+########################################
+## Parse Args
+
+path="$1"
+fullpath="$media/$path"
+if [[ ! -f "$fullpath" ]]
+then echo "$fail File does not exist at $fullpath" && exit 1
+fi
+category="${path%/*}"
+if ! grep -w -q "$category" <<<"${datename_categories[*]}"
+then echo "$warn Date doesn't matter for file at $fullpath" && exit
 fi
 
-if [[ -z "$(command -v exiftool)" ]]
-then echo "$fail Install exiftool first" && exit 1
-fi
-
-target="$1" # should include category
-if ! [[ "$target" =~ [a-z]+/[0-9]{8}-[0-9]{6}-[0-9a-f]{8}\.[0-9a-z]{2,5}$ ]]
-then echo "$fail Invalid target provided: $target" && exit 1
-fi
-name=${target#*/}
-category=${target%/*}
-path="$media/$category/$name"
-
-if [[ ! -f "$path" ]]
-then echo "$fail No file exists at $path" && exit 1;
-fi
-
-date="$2"
-if [[ -z "$date" ]]
-then echo "$fail No new date provided" && exit 1
-elif ! [[ "$date" =~ ^[0-9]{8}-[0-9]{6}$ ]]
+new_date="$2"
+if [[ -z "$new_date" || "$new_date" == -* ]]
+then new_date=""
+elif ! [[ "$new_date" =~ ^[0-9]{8}-[0-9]{6}$ ]]
 then echo "$fail Invalid date provided. Expected YYMMDD-hhmmss" && exit 1
 fi
 
-echo "Redating $path to $date"
+if [[ "$2" == "--dry-run" || "$3" == "--dry-run" ]]
+then dryrun="true"
+else dryrun="false"
+fi
 
-tmp_target="$tmp/$name"
-rm -rf "$tmp_target*"
-cp "$path" "$tmp_target"
-chmod 644 "$tmp_target"
+########################################
+## Helper Functions
 
-exiftool -CreateDate="${date::4}:${date:4:2}:${date:6:2} ${date:9:2}:${date:11:2}:${date:13:2}" "$tmp_target"
+function getCreateDate {
+  function fmtDate {
+    sed 's/.*  ://' \
+      | sed 's/: /:0/g' \
+      | sed 's/://g' \
+      | sed 's/\+.*//g' \
+      | sed 's/ /-/g' \
+      | sed 's/-$//' \
+      | sed 's/^-//'
+  }
+  created=$(exiftool -CreateDate -- "$1" | fmtDate)
+  if [[ -n "$created" && "$created" != "$date_zero" ]]
+  then echo "$created"
+  else
+    created=$(exiftool -DateCreated -- "$1" | fmtDate)
+    if [[ -n "$created" && "$created" != "$date_zero" ]]
+    then echo "$created"
+    else echo "$date_zero"
+    fi
+  fi
+}
 
-ext=$(exiftool -FileTypeExtension "$tmp_target" 2> /dev/null | sed 's/^.*: //')
-new_hash=$(sha256sum "$tmp_target" | cut -d " " -f 1)
-suffix=$(echo "$new_hash" | head -c 8)
-new_name="$date-$suffix.$ext"
-new_path="$media/$category/$new_name"
+function setCreateDate {
+  t="$1"
+  d="$2"
+  date="${d::4}:${d:4:2}:${d:6:2} ${d:9:2}:${d:11:2}:${d:13:2}"
+  #echo "Setting create date for file '$t' to '$date'"
+  if ! exiftool -ignoreMinorErrors -CreateDate="$date" -- "$t" > /dev/null
+  then
+    echo "Attmpting to repair broken exif data..."
+    # Rewrite all valid exif metadata if some was corrupted (see https://exiftool.org/faq.html#Q20)
+    if ! exiftool -all= -tagsfromfile @ -all:all -unsafe -icc_profile -CreateDate="$date" -- "$t" > /dev/null
+    then echo "$fail Failed to set $t CreateDate to $d" && exit 1
+    fi
+  fi
+  created=$(getCreateDate "$t")
+  original="${t}_original"
+  if [[ "$original" != "$tmp/$(basename "${t}_original")" ]]
+  then mv -f "$original" "$tmp/$(basename "${t}_original")"
+  fi
+  echo "Updated exif data for $t w new create date: ${created}"
+}
 
-# Add the new file
-cp "$tmp_target" "$new_path"
+########################################
+## Set Default Date
 
-# Remove the old file
-rm "$path"
+if [[ -z "$new_date" ]]
+then new_date=$(getCreateDate "$fullpath")
+fi
 
-# Update the path in the index
-mv "$index" "$index.backup"
-sed "s/$path$/$new_path/" < "$index.backup" > "$index"
-rm "$index.backup"
+if [[ -z "$new_date" || "$new_date" == "$date_zero" ]]
+then echo "$fail No date provided nor is a date available in exif data (got $new_date)" && exit 1
+fi
 
-echo "$good Re-dated $path to $new_path"
+if [[ "$date" == "$new_date" ]]
+then echo "$warn Date of $path is already set to $new_date"
+fi
+
+########################################
+## Change Create Date
+
+filename="${path##*/}"
+ext="${filename##*.}"
+
+tmp_path="$tmp/$(basename "$path")"
+rm -rf "$tmp_path*"
+cp "$fullpath" "$tmp_path"
+chmod 644 "$tmp_path"
+setCreateDate "$tmp_path" "$new_date"
+new_suffix=$(sha256sum "$tmp_path" | cut -d " " -f 1 | head -c 8)
+
+new_path="$category/$new_date-$new_suffix.$ext"
+new_fullpath="$media/$new_path"
+
+if [[ -f "$new_fullpath" ]]
+then echo "$warn File already exists at new path $new_path" && exit 1
+elif [[ "$new_fullpath" == "$fullpath" ]]
+then echo "$warn New path $new_path is equal to the old path" && exit 1
+fi
+
+########################################
+## Update Index
+
+index="$media/index.sqlite"
+if [[ ! -f "$index" ]]
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+fi
+
+update_query="update media set path = '$new_path' where path = '$path';"
+if [[ "$dryrun" == "true" ]]
+then echo "Execute SQLite query: $update_query"
+else
+  echo "Executing SQLite query: $update_query"
+  if ! sqlite3 "$index" "$update_query"
+  then echo "$fail Failed to update index entry for $path" && exit 1
+  fi
+fi
+
+########################################
+## Move File
+
+if [[ "$dryrun" == "true" ]]
+then
+  echo "Move $tmp_path to $new_path"
+  rm "$tmp_path"
+else
+  if [[ ! -d "$(dirname "$new_fullpath")" ]]
+  then mkdir -p "$(dirname "$new_fullpath")"
+  fi
+  mv -v "$tmp_path" "$new_fullpath"
+
+  # Validate new file before removing old one
+  checksum=$(sha256sum -- "$new_fullpath" | cut -d " " -f 1)
+  noext=${new_fullpath%.*}
+  suffix=${noext##*-}
+  if [[ "$checksum" != "$suffix"* ]]
+  then echo "$warn Invalid checksum for $new_path (sha256=$checksum)" && exit 1
+  fi
+  created=$(getCreateDate "$fullpath")
+  if [[ "${new_path##*/}" != "$created"* ]]
+  then echo "$warn Invalid create date for $new_path (CreateDate=$created)" && exit 1
+  fi
+
+  rm "$fullpath"
+  echo "$good Successfully reset date of ${path#*/} yielding $new_path";
+fi
+

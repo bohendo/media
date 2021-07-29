@@ -53,7 +53,7 @@ fi
 new_path="$new_category/${path#*/}"
 new_fullpath="$media/$new_path"
 if [[ -f "$new_fullpath" ]]
-then echo "$warn File already exists at $new_fullpath"
+then echo "$warn File already exists at $new_fullpath" && exit 1
 fi
 
 if [[ "$new_path" == "$path" ]]
@@ -90,4 +90,3 @@ else
   mv -v "$fullpath" "$new_fullpath"
   echo "$good Successfully recategorized ${path#*/} as $new_category";
 fi
-

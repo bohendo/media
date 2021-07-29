@@ -72,9 +72,9 @@ do
   ########################################
   ## Check Path
 
-  full_path="$media/$file"
-  if [[ ! -f "$full_path" ]]
-  then echo "$fail No file exists at path $full_path" && continue
+  fullpath="$media/$file"
+  if [[ ! -f "$fullpath" ]]
+  then echo "$fail No file exists at path $fullpath" && continue
   fi
 
   ########################################
@@ -88,7 +88,7 @@ do
   ########################################
   ## Check Hash
 
-  checksum=$(sha256sum -- "$full_path" | cut -d " " -f 1)
+  checksum=$(sha256sum -- "$fullpath" | cut -d " " -f 1)
   noext=${file%.*}
   suffix=${noext##*-}
   if [[ "$checksum" != "$suffix"* ]]
@@ -100,7 +100,7 @@ do
 
   if grep -w -q "$category" <<<"${datename_categories[*]}"
   then
-    created=$(getCreateDate "$full_path")
+    created=$(getCreateDate "$fullpath")
     if [[ "${file##*/}" != "$created"* ]]
     then echo "$warn Invalid create date for $file (CreateDate=$created)" && hasErr="true"
     fi
