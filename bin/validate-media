@@ -83,7 +83,7 @@ function verifyMedia {
   file="$1"
   hasErr="false"
 
-  ########################################
+  ####################
   ## Check Path
 
   fullpath="$media/$file"
@@ -91,7 +91,7 @@ function verifyMedia {
   then echo "$fail No file exists at path $fullpath" && return
   fi
 
-  ########################################
+  ####################
   ## Check Index
 
   if ! inputs=$(sqlite3 "$index" "select hash from media where path = '$file';" | sort)
@@ -101,7 +101,7 @@ function verifyMedia {
   then echo "$fail File at $file is not in the index" && hasErr="true"
   fi
 
-  ########################################
+  ####################
   ## Check Category
 
   category="${file%%/*}"
@@ -109,7 +109,7 @@ function verifyMedia {
   then echo "$warn Invalid category for $file" && hasErr="true"
   fi
 
-  ########################################
+  ####################
   ## Check Hash
 
   checksum=$(sha256sum -- "$fullpath" | cut -d " " -f 1)
@@ -119,7 +119,7 @@ function verifyMedia {
   then echo "$warn Invalid checksum for $file (sha256=$checksum)" && hasErr="true"
   fi
 
-  ########################################
+  ####################
   ## Check Create Date
 
   if grep -w -q "$category" <<<"${datename_categories[*]}"
@@ -163,7 +163,7 @@ else
   )
   echo "Found $(echo "$fs_paths" | wc -l) media files on the filesystem"
 
-  all_paths=$(echo -en "$index_paths\n$fs_paths" | sort | uniq)
+  all_paths=$(echo -en "$index_paths\n$fs_paths" | sort | uniq | sed '/camera\/20110729-102048-cc414e39.jpg/,$!d')
   echo "Validating $(echo "$all_paths" | wc -l) unique media files"
   for file in $all_paths
   do verifyMedia "$file"

@@ -4,6 +4,8 @@ set -e
 ########################################
 ## Define Constants
 
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)
+
 good="✅"
 warn="⚠️ "
 fail="❌"
@@ -46,7 +48,7 @@ new_date="$2"
 if [[ -z "$new_date" || "$new_date" == -* ]]
 then new_date=""
 elif ! [[ "$new_date" =~ ^[0-9]{8}-[0-9]{6}$ ]]
-then echo "$fail Invalid date provided. Expected YYMMDD-hhmmss" && exit 1
+then echo "$fail Invalid date, expected YYMMDD-hhmmss but got $new_date" && exit 1
 fi
 
 if [[ "$2" == "--dry-run" || "$3" == "--dry-run" ]]
@@ -71,10 +73,15 @@ function getCreateDate {
   if [[ -n "$created" && "$created" != "$date_zero" ]]
   then echo "$created"
   else
-    created=$(exiftool -DateCreated -- "$1" | fmtDate)
+    created=$(exiftool -DateTimeCreated -- "$1" | fmtDate)
     if [[ -n "$created" && "$created" != "$date_zero" ]]
     then echo "$created"
-    else echo "$date_zero"
+    else
+      created=$(exiftool -DateCreated -- "$1" | fmtDate)
+      if [[ -n "$created" && "$created" != "$date_zero" ]]
+      then echo "$created"
+      else echo "$date_zero"
+      fi
     fi
   fi
 }
@@ -100,19 +107,49 @@ function setCreateDate {
   echo "Updated exif data for $t w new create date: ${created}"
 }
 
+function validateMedia {
+  new_fullpath="$1"
+  # Validate new file before removing old one
+  checksum=$(sha256sum -- "$new_fullpath" | cut -d " " -f 1)
+  noext=${new_fullpath%.*}
+  suffix=${noext##*-}
+  if [[ "$checksum" != "$suffix"* ]]
+  then echo "$warn Invalid checksum for $new_path (sha256=$checksum)" && exit 1
+  fi
+  created=$(getCreateDate "$new_fullpath")
+  if [[ "${new_path##*/}" != "$created"* ]]
+  then echo "$warn Invalid create date for $new_path (CreateDate=$created)" && exit 1
+  fi
+}
+
 ########################################
 ## Set Default Date
 
+exif_date=$(getCreateDate "$fullpath")
+name_date="$(echo "${path##*/}" | cut -d '-' -f 1-2)"
+echo "exif_date=$exif_date | name_date=$name_date"
+
 if [[ -z "$new_date" ]]
-then new_date=$(getCreateDate "$fullpath")
+then
+  if [[ "$name_date" == "$date_zero" && "$exif_date" != "$date_zero" ]]
+  then
+    new_date="$exif_date"
+    echo "Setting new date to value from exifdata: $exif_date"
+  elif [[ "$name_date" != "$date_zero" && "$exif_date" == "$date_zero" ]]
+  then
+    new_date="$name_date"
+    echo "Setting new date to value from filename: $name_date"
+  else
+    echo "$fail No date provided nor is a date available in exif data" && exit
+  fi
 fi
 
-if [[ -z "$new_date" || "$new_date" == "$date_zero" ]]
-then echo "$fail No date provided nor is a date available in exif data (got $new_date)" && exit 1
+if [[ "$name_date" == "$new_date" && "$exif_date" == "$new_date" ]]
+then echo "$warn Date of $path is already set to $new_date" && exit
 fi
 
-if [[ "$date" == "$new_date" ]]
-then echo "$warn Date of $path is already set to $new_date"
+if ! [[ "$new_date" =~ ^[0-9]{8}-[0-9]{6}$ ]]
+then echo "$fail Invalid date, expected YYMMDD-hhmmss but got $new_date" && exit 1
 fi
 
 ########################################
@@ -132,7 +169,12 @@ new_path="$category/$new_date-$new_suffix.$ext"
 new_fullpath="$media/$new_path"
 
 if [[ -f "$new_fullpath" ]]
-then echo "$warn File already exists at new path $new_path" && exit 1
+then
+  echo "$warn File already exists at new path $new_path"
+  validateMedia "$new_fullpath"
+  echo "File at $new_path is valid, deleting the old one"
+  bash "$root/bin/remove-media" "$path"
+  exit
 elif [[ "$new_fullpath" == "$fullpath" ]]
 then echo "$warn New path $new_path is equal to the old path" && exit 1
 fi
@@ -169,17 +211,7 @@ else
   mv "$tmp_path" "$new_fullpath"
   echo "Moved $tmp_path to $new_path"
 
-  # Validate new file before removing old one
-  checksum=$(sha256sum -- "$new_fullpath" | cut -d " " -f 1)
-  noext=${new_fullpath%.*}
-  suffix=${noext##*-}
-  if [[ "$checksum" != "$suffix"* ]]
-  then echo "$warn Invalid checksum for $new_path (sha256=$checksum)" && exit 1
-  fi
-  created=$(getCreateDate "$fullpath")
-  if [[ "${new_path##*/}" != "$created"* ]]
-  then echo "$warn Invalid create date for $new_path (CreateDate=$created)" && exit 1
-  fi
+  validateMedia "$new_fullpath"
 
   rm "$fullpath"
   echo "$good Successfully reset date of ${path#*/} yielding $new_path";

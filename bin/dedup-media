@@ -1,24 +1,78 @@
 #!/bin/bash
+set -e
+
+########################################
+## Define Constants
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)
+
+good="✅"
+warn="⚠️ "
+fail="❌"
+
+datename_categories=(camera screenshots private)
+
+########################################
+## Make sure required bins & files & dirs exist
+
+if [[ -z "$(command -v exiftool)" ]]
+then echo "$fail Install exiftool first" && exit 1
+fi
+
+if [[ -z "$(command -v sqlite3)" ]]
+then echo "$fail Install sqlite3 first" && exit 1
+fi
+
+media=${MEDIA_DIR:-$HOME/Media}
+mkdir -p "$media"
+
+index="$media/index.sqlite"
+if [[ ! -f "$index" ]]
+then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
+fi
+
+########################################
+## Parse Args
 
 if [[ -z "$1" ]]
 then
-  echo "Use the 1st & nly arg to specify whether or not you actually want to make changes"
+  echo "Use the 1st & only arg to specify whether or not you actually want to make changes"
   echo "  -n  No I don't want to make changes, but show me what the changes would be"
   echo "  -y  Yes I want to make changes"
   exit
 fi
 
-echo "Gathering a list of unique timestamps.."
+########################################
+## Get Timestamps
+
+where=$(
+  for category in "${datename_categories[@]}";
+  do echo "path like '$category/________-______-________.%'";
+  done | tr '\n' ',' | sed 's/,$/\n/' | sed 's/,/ or /g'
+)
+query="select path from media where $where;"
+
+if ! paths=$(sqlite3 "$index" "$query" | sort)
+then echo "$fail Failed to select file paths from $index" && exit 1
+fi
+echo "Found $(echo "$paths" | wc -l) media files in the index with date names"
+
 # get unique timestamps minus the unknown zero-timestamp
-timestamps=$(find media/camera/ -type f -exec basename {} \; | cut -d "-" -f 1-2 | sort -u | sed '/00000000-000000/d')
+timestamps=$(echo "$paths" \
+  | sed 's|.*/||' \
+  | cut -d "-" -f 1-2 \
+  | sort -u \
+  | sed '/00000000-000000/d' \
+)
 
-echo "Done"
-echo "Scanning each timestamp for high-res/low-res dups to remove.."
+########################################
+## Look For Duplicates At Each Timestamp
 
+echo "Found $(echo "$timestamps" | wc -l) unique timestamps to scan"
 # for each timestamp, if two different mp4s exist, delete the smaller one
 for ts in $timestamps
 do
-  files=$(find media/camera/ -type f -name "$ts-*.mp4")
+  files=$(grep "$ts-*.mp4" <<<"$paths")
   if [[ "$(echo "$files" | wc -l)" == "2" ]]
   then
     if [[
@@ -27,7 +81,7 @@ do
     ]]
     then
       echo
-      echo "There are 2 vids w the same timestamp and duration.."
+      echo "$warn There are 2 vids w the same timestamp and duration.."
 
       f1="$(echo "$files" | head -n 1)"
       du "$f1"
@@ -37,17 +91,17 @@ do
       then
         echo "f1 is smaller, deleting.."
         if [[ "$1" == "-y" ]]
-        then echo bash ops/remove.sh "$f1"
-        else bash ops/remove.sh "$f1"
+        then echo bash "$root/bin/remove-media" "$f1"
+        else bash "$root/bin/remove-media" "$f1"
         fi
       elif [[ "$(du "$f1" | cut -d "	" -f 1)" -gt "$(du "$f2" | cut -d "	" -f 1)" ]]
       then
         echo "f2 is smaller, deleting"
         if [[ "$1" == "-y" ]]
-        then echo bash ops/remove.sh "$f2"
-        else bash ops/remove.sh "$f2"
+        then echo bash "$root/bin/remove-media" "$f2"
+        else bash "$root/bin/remove-media" "$f2"
         fi
-      else echo "They're the same size, doing nothing"
+      else echo "$good They're the same size, doing nothing"
       fi
 
     fi
