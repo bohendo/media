@@ -3,6 +3,8 @@
 ########################################
 ## Define Constants
 
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)
+
 good="✅"
 warn="⚠️ "
 fail="❌"
@@ -31,8 +33,15 @@ mkdir -p "$media"
 
 path="$1"
 fullpath="$media/$path"
-if [[ -n "$path" && ! -f "$fullpath" ]]
+if [[ -z "$path" || "$path" == -* ]]
+then path=""
+elif [[ -n "$path" && ! -f "$fullpath" ]]
 then echo "$fail File does not exist at $fullpath" && exit 1
+fi
+
+if [[ "$1" == "--fix" || "$2" == "--fix" ]]
+then fix="true"
+else fix="false"
 fi
 
 ########################################
@@ -101,7 +110,12 @@ function verifyMedia {
   then
     created=$(getCreateDate "$fullpath")
     if [[ "${file##*/}" != "$created"* ]]
-    then echo "$warn Invalid create date for $file (CreateDate=$created)" && hasErr="true"
+    then
+      echo "$warn Invalid create date for $file (CreateDate=$created)"
+      hasErr="true"
+      if [[ "$fix" == "true" ]]
+      then bash "$root/bin/redate-media" "$file"
+      fi
     fi
   fi
 
@@ -126,7 +140,7 @@ else
   then sqlite3 "$index" "create table media(hash varchar(64) primary key, path text);"
   fi
 
-  if ! all_files=$(sqlite3 "$index" "select path from media;")
+  if ! all_files=$(sqlite3 "$index" "select path from media;" | sort)
   then echo "$fail Failed to select file paths from $index" && exit 1
   fi
 
