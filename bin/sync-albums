@@ -64,4 +64,4 @@ do
   else sync_album "$name" "$value"
   fi
 
-done < <(cat "$root/albums.conf")
+done < <(cat "$media/albums.conf")
